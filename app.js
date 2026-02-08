@@ -1452,25 +1452,62 @@ class MusicPlayer {
     isValidLyrics(contentpDiv) {
         if (!contentpDiv) return false;
         
-        // Check if it has exactly one div inside
+        // Pattern 1: Check if it has exactly one div inside and br tags
         const innerDivs = contentpDiv.querySelectorAll(':scope > div');
-        if (innerDivs.length !== 1) {
-            return false;
+        if (innerDivs.length === 1) {
+            const brTags = contentpDiv.querySelectorAll('br');
+            if (brTags.length > 0) {
+                const textContent = contentpDiv.textContent || contentpDiv.innerText;
+                if (textContent && textContent.trim().length >= 10) {
+                    return true;
+                }
+            }
         }
         
-        // Check if it has br tags (lyrics usually have line breaks)
-        const brTags = contentpDiv.querySelectorAll('br');
-        if (brTags.length === 0) {
-            return false;
+        // Pattern 2: Check if there's a point where only br tags and text remain
+        const children = Array.from(contentpDiv.childNodes);
+        let lastNonBrTextIndex = -1;
+        
+        // Find the last element that is not br or text
+        for (let i = 0; i < children.length; i++) {
+            const node = children[i];
+            
+            // Skip whitespace text nodes
+            if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) {
+                continue;
+            }
+            
+            // If we find a non-text, non-br element, mark its position
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR') {
+                lastNonBrTextIndex = i;
+            }
         }
         
-        // Check if it has some text content
-        const textContent = contentpDiv.textContent || contentpDiv.innerText;
-        if (!textContent || textContent.trim().length < 10) {
-            return false;
+        // If we found a last non-br/text element, check if everything after it is br/text
+        if (lastNonBrTextIndex !== -1 && lastNonBrTextIndex < children.length - 1) {
+            const lyricsNodes = children.slice(lastNonBrTextIndex + 1);
+            
+            // Check if all remaining nodes are only br and text
+            const hasOnlyBrAndText = lyricsNodes.every(n => {
+                if (n.nodeType === Node.TEXT_NODE) return true;
+                if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') return true;
+                return false;
+            });
+            
+            if (hasOnlyBrAndText) {
+                // Check if there's meaningful text content
+                const textContent = lyricsNodes
+                    .filter(n => n.nodeType === Node.TEXT_NODE)
+                    .map(n => n.textContent)
+                    .join(' ')
+                    .trim();
+                if (textContent.length >= 10) {
+                    return true;
+                }
+            }
         }
         
-        return true;
+        return false;
     }
 
     // Set lyrics button state and show appropriate icon
@@ -1636,16 +1673,90 @@ class MusicPlayer {
                 // Clone the div to avoid modifying original
                 const clonedDiv = contentpDiv.cloneNode(true);
                 
-                // Remove the first div (song title) - it's not part of lyrics
-                const firstDiv = clonedDiv.querySelector(':scope > div');
-                if (firstDiv) {
-                    firstDiv.remove();
+                let lyricsHtml = '';
+                let lyricsText = '';
+                
+                // Pattern 1: Check if it has exactly one div inside and br tags
+                const innerDivs = clonedDiv.querySelectorAll(':scope > div');
+                const brTags = clonedDiv.querySelectorAll('br');
+                const textContent = clonedDiv.textContent || clonedDiv.innerText;
+                
+                // Try Pattern 1 first
+                if (innerDivs.length === 1 && brTags.length > 0 && textContent && textContent.trim().length >= 10) {
+                    // Pattern 1: One div + br tags
+                    // Remove the first div (song title) - it's not part of lyrics
+                    const firstDiv = clonedDiv.querySelector(':scope > div');
+                    if (firstDiv) {
+                        firstDiv.remove();
+                    }
+                    
+                    // Extract lyrics text (without the first div)
+                    lyricsHtml = clonedDiv.innerHTML;
+                    lyricsText = clonedDiv.textContent || clonedDiv.innerText;
+                } else {
+                    // Pattern 2: Find point where only br and text remain
+                    const children = Array.from(clonedDiv.childNodes);
+                    let lastNonBrTextIndex = -1;
+                    
+                    // Find the last element that is not br or text
+                    for (let i = 0; i < children.length; i++) {
+                        const node = children[i];
+                        
+                        // Skip whitespace text nodes
+                        if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) {
+                            continue;
+                        }
+                        
+                        // If we find a non-text, non-br element, mark its position
+                        if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR') {
+                            lastNonBrTextIndex = i;
+                        }
+                    }
+                    
+                    // If we found a last non-br/text element, extract everything after it
+                    if (lastNonBrTextIndex !== -1 && lastNonBrTextIndex < children.length - 1) {
+                        const lyricsNodes = children.slice(lastNonBrTextIndex + 1);
+                        
+                        // Check if all remaining nodes are only br and text
+                        const hasOnlyBrAndText = lyricsNodes.every(n => {
+                            if (n.nodeType === Node.TEXT_NODE) return true;
+                            if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') return true;
+                            return false;
+                        });
+                        
+                        if (hasOnlyBrAndText) {
+                            // Build HTML from lyrics nodes
+                            lyricsHtml = lyricsNodes.map(n => {
+                                if (n.nodeType === Node.TEXT_NODE) {
+                                    // Escape HTML in text nodes
+                                    return n.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') {
+                                    return '<br>';
+                                }
+                                return '';
+                            }).join('');
+                            
+                            // Build text from lyrics nodes
+                            lyricsText = lyricsNodes
+                                .filter(n => n.nodeType === Node.TEXT_NODE)
+                                .map(n => n.textContent)
+                                .join(' ')
+                                .trim();
+                        }
+                    }
                 }
                 
-                // Extract lyrics text (without the first div)
-                // Clean up HTML: remove extra br tags and normalize spacing
-                let lyricsHtml = clonedDiv.innerHTML;
+                // Verify we have valid lyrics before processing
+                if (!lyricsHtml || !lyricsText || lyricsText.trim().length < 10) {
+                    // No valid lyrics found - only set state if still current track
+                    if (this.currentTrackId === trackId) {
+                        this.currentTrackLyrics = null;
+                        this.setLyricsState('notfound');
+                    }
+                    return;
+                }
                 
+                // Clean up HTML: remove extra br tags and normalize spacing
                 // Remove multiple consecutive br tags (more than 2)
                 lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
                 
@@ -1658,6 +1769,7 @@ class MusicPlayer {
                 
                 // Clean up extra whitespace
                 lyricsHtml = lyricsHtml.trim();
+                lyricsText = lyricsText.trim();
                 
                 // Verify this is still the current track before setting lyrics
                 if (this.currentTrackId !== trackId) {
@@ -1667,7 +1779,7 @@ class MusicPlayer {
                 
                 const lyricsData = {
                     html: lyricsHtml,
-                    text: clonedDiv.textContent || clonedDiv.innerText
+                    text: lyricsText
                 };
                 
                 // Save to cache
