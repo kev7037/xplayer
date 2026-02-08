@@ -56,6 +56,13 @@ class MusicPlayer {
         this.playerBarShuffleOffIcon = document.getElementById('playerBarShuffleOffIcon');
         this.playerBarShuffleOnIcon = document.getElementById('playerBarShuffleOnIcon');
         
+        // Progress Bar
+        this.playerBarProgressContainer = document.getElementById('playerBarProgressContainer');
+        this.playerBarProgressTrack = document.getElementById('playerBarProgressTrack');
+        this.playerBarProgressFill = document.getElementById('playerBarProgressFill');
+        this.playerBarProgressHandle = document.getElementById('playerBarProgressHandle');
+        this.isDraggingProgress = false;
+        
         // Controls
         this.playPauseBtn = document.getElementById('playPauseBtn');
         this.prevBtn = document.getElementById('prevBtn');
@@ -103,6 +110,12 @@ class MusicPlayer {
         this.audioPlayer.addEventListener('error', (e) => {
             this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
             this.playNext();
+        });
+        this.audioPlayer.addEventListener('timeupdate', () => {
+            this.updateProgressBar();
+        });
+        this.audioPlayer.addEventListener('loadedmetadata', () => {
+            this.updateProgressBar();
         });
 
         // Player controls
@@ -163,6 +176,97 @@ class MusicPlayer {
         }
         if (this.playerBarShuffle) {
             this.playerBarShuffle.addEventListener('click', () => this.toggleShuffle());
+        }
+        
+        // Progress Bar Events
+        if (this.playerBarProgressContainer) {
+            this.setupProgressBar();
+        }
+    }
+    
+    setupProgressBar() {
+        if (!this.playerBarProgressContainer || !this.playerBarProgressTrack) return;
+        
+        // Click to seek
+        this.playerBarProgressContainer.addEventListener('click', (e) => {
+            if (this.isDraggingProgress) return;
+            this.seekToPosition(e);
+        });
+        
+        // Drag to seek
+        let isMouseDown = false;
+        
+        this.playerBarProgressTrack.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            this.isDraggingProgress = true;
+            this.playerBarProgressContainer.classList.add('dragging');
+            this.seekToPosition(e);
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isMouseDown && this.isDraggingProgress) {
+                this.seekToPosition(e);
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                this.isDraggingProgress = false;
+                this.playerBarProgressContainer.classList.remove('dragging');
+            }
+        });
+        
+        // Touch events for mobile
+        this.playerBarProgressTrack.addEventListener('touchstart', (e) => {
+            isMouseDown = true;
+            this.isDraggingProgress = true;
+            this.playerBarProgressContainer.classList.add('dragging');
+            this.seekToPosition(e.touches[0]);
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (isMouseDown && this.isDraggingProgress) {
+                e.preventDefault();
+                this.seekToPosition(e.touches[0]);
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                this.isDraggingProgress = false;
+                this.playerBarProgressContainer.classList.remove('dragging');
+            }
+        });
+    }
+    
+    seekToPosition(e) {
+        if (!this.playerBarProgressTrack || !this.audioPlayer) return;
+        
+        const rect = this.playerBarProgressTrack.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const percentage = Math.max(0, Math.min(1, x / rect.width));
+        
+        if (this.audioPlayer.duration) {
+            this.audioPlayer.currentTime = percentage * this.audioPlayer.duration;
+            this.updateProgressBar();
+        }
+    }
+    
+    updateProgressBar() {
+        if (!this.audioPlayer || !this.playerBarProgressFill || !this.playerBarProgressHandle) return;
+        
+        // Don't update if user is dragging
+        if (this.isDraggingProgress) return;
+        
+        if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
+            const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
+            this.playerBarProgressFill.style.width = percentage + '%';
+            this.playerBarProgressHandle.style.left = percentage + '%';
+        } else {
+            this.playerBarProgressFill.style.width = '0%';
+            this.playerBarProgressHandle.style.left = '0%';
         }
     }
 
@@ -641,6 +745,14 @@ class MusicPlayer {
         }
         if (this.bottomPlayerBar) {
             this.bottomPlayerBar.style.display = 'flex';
+        }
+        
+        // Reset progress bar
+        if (this.playerBarProgressFill) {
+            this.playerBarProgressFill.style.width = '0%';
+        }
+        if (this.playerBarProgressHandle) {
+            this.playerBarProgressHandle.style.left = '0%';
         }
         
         // Update current track image
