@@ -15,6 +15,7 @@ class MusicPlayer {
         this.customPlaylists = {}; // Initialize customPlaylists
         this.currentPlaylistId = null;
         this.nextPlaylistId = 1;
+        this.FAVORITE_PLAYLIST_ID = 'favorite'; // Special ID for favorite playlist
         
         this.initializeElements();
         this.attachEventListeners();
@@ -81,6 +82,7 @@ class MusicPlayer {
         // Home Page
         this.recentTracksContainer = document.getElementById('recentTracks');
         this.recentPlaylistsContainer = document.getElementById('recentPlaylists');
+        this.resetAllBtn = document.getElementById('resetAllBtn');
         
         // Search Page
         this.searchHistoryList = document.getElementById('searchHistoryList');
@@ -91,10 +93,14 @@ class MusicPlayer {
         // Playlists Page
         this.playlistsListMain = document.getElementById('playlistsListMain');
         this.createPlaylistBtnMain = document.getElementById('createPlaylistBtnMain');
+        this.playlistDetailPage = document.getElementById('playlistDetailPage');
+        this.playlistTracksContainer = document.getElementById('playlistTracksContainer');
+        this.backToPlaylistsBtn = document.getElementById('backToPlaylistsBtn');
         
         // UI
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.errorMessage = document.getElementById('errorMessage');
+        this.toastContainer = document.getElementById('toastContainer');
     }
 
     attachEventListeners() {
@@ -149,10 +155,28 @@ class MusicPlayer {
                 e.preventDefault();
                 const page = item.dataset.page;
                 if (page) {
+                    // Hide playlist detail page if showing
+                    if (this.playlistDetailPage) {
+                        this.playlistDetailPage.style.display = 'none';
+                        this.playlistDetailPage.style.visibility = 'hidden';
+                        this.playlistDetailPage.classList.remove('active');
+                    }
                     this.navigateToPage(page);
                 }
             });
         });
+        
+        // Back to playlists button
+        if (this.backToPlaylistsBtn) {
+            this.backToPlaylistsBtn.addEventListener('click', () => {
+                if (this.playlistDetailPage) {
+                    this.playlistDetailPage.style.display = 'none';
+                    this.playlistDetailPage.style.visibility = 'hidden';
+                    this.playlistDetailPage.classList.remove('active');
+                }
+                this.navigateToPage('playlists');
+            });
+        }
         
         // Search (Main)
         if (this.searchBtn) {
@@ -167,6 +191,11 @@ class MusicPlayer {
         // Playlists Page
         if (this.createPlaylistBtnMain) {
             this.createPlaylistBtnMain.addEventListener('click', () => this.createNewPlaylist());
+        }
+        
+        // Reset All Button
+        if (this.resetAllBtn) {
+            this.resetAllBtn.addEventListener('click', () => this.resetAllData());
         }
         
         // Bottom Player Bar
@@ -567,50 +596,99 @@ class MusicPlayer {
         });
     }
 
-    createTrackElement(track, source = 'playlist') {
+    createTrackElement(track, source = 'playlist', index = null) {
         const div = document.createElement('div');
         div.className = 'track-item';
+        
+        // Add compact class for playlist-detail
+        if (source === 'playlist-detail') {
+            div.classList.add('compact');
+        }
+        
         div.dataset.trackId = track.id;
 
-        if (source === 'playlist' && this.currentIndex === this.playlist.findIndex(t => t.id === track.id)) {
+        // Check if this track is currently playing
+        const isCurrentlyPlaying = source !== 'results' && 
+                                   this.currentIndex >= 0 && 
+                                   this.playlist[this.currentIndex] && 
+                                   this.playlist[this.currentIndex].id === track.id;
+        
+        if (isCurrentlyPlaying) {
             div.classList.add('active');
         }
 
+        // Ensure track has required properties
+        const trackTitle = track.title || 'بدون عنوان';
+        const trackArtist = track.artist || 'ناشناس';
         const trackImage = track.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E';
         
-        div.innerHTML = `
-            <div class="track-image">
-                <img src="${trackImage}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
-            </div>
-            <div class="track-info">
-                <h4>${this.escapeHtml(track.title)}</h4>
-                <p>${this.escapeHtml(track.artist)}</p>
-            </div>
-            <div class="track-actions">
-                ${source === 'results' ? 
-                    `<button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                        </svg>
-                     </button>
-                     <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M8 5v14l11-7z"/>
-                        </svg>
-                     </button>` :
-                    `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M8 5v14l11-7z"/>
-                        </svg>
-                     </button>
-                     <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                        </svg>
-                     </button>`
-                }
-            </div>
-        `;
+        // Check if track is in favorite list (pass track object for URL comparison)
+        const isFavorite = this.isTrackInFavoritesByUrl(track);
+        
+        // Different layout for playlist-detail (Spotify-style)
+        if (source === 'playlist-detail') {
+            const trackNumber = index !== null ? index + 1 : '';
+            const showPlayButton = isCurrentlyPlaying;
+            div.innerHTML = `
+                ${showPlayButton ? '' : `<span class="track-number">${trackNumber}</span>`}
+                <button class="track-play-button" data-action="play" data-track-id="${track.id || Date.now()}" title="پخش" style="display: ${showPlayButton ? 'flex' : 'none'};">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                </button>
+                <div class="track-image-compact">
+                    <img src="${trackImage}" alt="${this.escapeHtml(trackTitle)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
+                </div>
+                <div class="track-info-compact">
+                    <span class="track-title-compact">${this.escapeHtml(trackTitle)}</span>
+                    <span class="track-artist-compact">${this.escapeHtml(trackArtist)}</span>
+                </div>
+                <button class="btn-remove-compact" data-action="remove" data-track-id="${track.id || Date.now()}" title="حذف از پلی‌لیست">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                </button>
+            `;
+        } else {
+            div.innerHTML = `
+                <div class="track-image">
+                    <img src="${trackImage}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
+                </div>
+                <div class="track-info">
+                    <h4>${this.escapeHtml(track.title)}</h4>
+                    <p>${this.escapeHtml(track.artist)}</p>
+                </div>
+                <div class="track-actions">
+                    ${source === 'results' ? 
+                        `<button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
+                            <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                            </svg>
+                         </button>
+                         <button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                            </svg>
+                         </button>
+                         <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                         </button>` :
+                        `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                         </button>
+                         <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                         </button>`
+                    }
+                </div>
+            `;
+        }
 
         // Attach event listeners
         div.querySelectorAll('button').forEach(btn => {
@@ -619,15 +697,72 @@ class MusicPlayer {
                 const action = btn.dataset.action;
                 const trackId = parseInt(btn.dataset.trackId);
                 
-                if (action === 'add-to-custom') {
+                if (action === 'toggle-favorite') {
+                    this.toggleFavorite(trackId);
+                    // Update the heart icon in the UI
+                    const heartBtn = div.querySelector('.btn-favorite');
+                    const heartIcon = div.querySelector('.heart-icon');
+                    const isFav = this.isTrackInFavoritesByUrl(track);
+                    if (isFav) {
+                        heartBtn.classList.add('favorite-active');
+                        heartBtn.title = 'حذف از علاقه‌مندی‌ها';
+                        heartIcon.setAttribute('fill', 'currentColor');
+                    } else {
+                        heartBtn.classList.remove('favorite-active');
+                        heartBtn.title = 'اضافه به علاقه‌مندی‌ها';
+                        heartIcon.setAttribute('fill', 'none');
+                    }
+                } else if (action === 'add-to-custom') {
                     this.showAddToPlaylistDialog(trackId);
                 } else if (action === 'play') {
-                    this.playTrack(trackId, source);
+                    if (source === 'playlist-detail') {
+                        // Find track index in current playlist
+                        const trackIndex = this.playlist.findIndex(t => t.id === trackId);
+                        if (trackIndex !== -1) {
+                            this.currentIndex = trackIndex;
+                            this.loadAndPlay(this.playlist[trackIndex]);
+                            this.updatePlaylistDisplay();
+                            // Update active state in detail view
+                            if (this.playlistTracksContainer) {
+                                this.displayPlaylistTracks(this.playlist);
+                            }
+                        }
+                    } else {
+                        this.playTrack(trackId, source);
+                    }
                 } else if (action === 'remove') {
                     this.removeFromPlaylist(trackId);
+                    // Refresh playlist detail if we're viewing it
+                    if (source === 'playlist-detail' && this.currentPlaylistId) {
+                        const playlist = this.customPlaylists[this.currentPlaylistId];
+                        if (playlist && this.playlistTracksContainer) {
+                            this.displayPlaylistTracks(playlist.tracks);
+                        }
+                    }
                 }
             });
         });
+
+        // Click on track item to play (for playlist-detail)
+        if (source === 'playlist-detail') {
+            div.addEventListener('click', (e) => {
+                // Don't trigger if clicking on a button
+                if (e.target.closest('button')) {
+                    return;
+                }
+                const trackId = parseInt(div.dataset.trackId);
+                const trackIndex = this.playlist.findIndex(t => t.id === trackId);
+                if (trackIndex !== -1) {
+                    this.currentIndex = trackIndex;
+                    this.loadAndPlay(this.playlist[trackIndex]);
+                    this.updatePlaylistDisplay();
+                    // Update active state in detail view
+                    if (this.playlistTracksContainer) {
+                        this.displayPlaylistTracks(this.playlist);
+                    }
+                }
+            });
+        }
 
         return div;
     }
@@ -641,13 +776,8 @@ class MusicPlayer {
             this.customPlaylists = {};
         }
         
-        const playlists = Object.entries(this.customPlaylists);
-        if (playlists.length === 0) {
-            if (confirm('هیچ پلی‌لیست سفارشی وجود ندارد. می‌خواهید یک پلی‌لیست جدید بسازید؟')) {
-                this.createNewPlaylist();
-            }
-            return;
-        }
+        // Filter out favorite playlist and get other playlists
+        const playlists = Object.entries(this.customPlaylists).filter(([id]) => id !== this.FAVORITE_PLAYLIST_ID);
         
         const dialog = document.createElement('div');
         dialog.className = 'playlist-selector-dialog';
@@ -679,8 +809,11 @@ class MusicPlayer {
         
         // Create new playlist
         dialog.querySelector('.btn-create-new-from-dialog').addEventListener('click', () => {
-            document.body.removeChild(dialog);
-            this.createNewPlaylist();
+            const newPlaylistId = this.createNewPlaylist(track);
+            if (newPlaylistId) {
+                document.body.removeChild(dialog);
+                this.showError('پلی‌لیست جدید ساخته شد و موزیک اضافه شد');
+            }
         });
         
         // Select playlist buttons
@@ -692,6 +825,105 @@ class MusicPlayer {
                 this.showError('موزیک به پلی‌لیست اضافه شد');
             });
         });
+    }
+    
+    // Normalize URL for comparison
+    normalizeUrl(url) {
+        if (!url) return '';
+        try {
+            const urlObj = new URL(url);
+            return urlObj.origin + urlObj.pathname;
+        } catch (e) {
+            return url.split('?')[0].split('#')[0];
+        }
+    }
+    
+    // Check if track is in favorites by track object (more reliable)
+    isTrackInFavoritesByUrl(track) {
+        if (!track) return false;
+        if (!this.customPlaylists || !this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
+            return false;
+        }
+        const favoritePlaylist = this.customPlaylists[this.FAVORITE_PLAYLIST_ID];
+        if (!favoritePlaylist.tracks) return false;
+        
+        const trackUrl = this.normalizeUrl(track.url);
+        const trackPageUrl = track.pageUrl ? this.normalizeUrl(track.pageUrl) : null;
+        
+        // Check if track exists by URL
+        return favoritePlaylist.tracks.some(t => {
+            const existingUrl = this.normalizeUrl(t.url);
+            const existingPageUrl = t.pageUrl ? this.normalizeUrl(t.pageUrl) : null;
+            
+            return existingUrl === trackUrl || 
+                   (trackPageUrl && existingPageUrl === trackPageUrl) ||
+                   (trackPageUrl && existingUrl === trackPageUrl) ||
+                   (existingPageUrl && trackUrl === existingPageUrl);
+        });
+    }
+    
+    // Legacy method for backward compatibility
+    isTrackInFavorites(trackId) {
+        // Try to find track in search results
+        const track = this.searchResults.find(t => t.id === trackId);
+        if (track) {
+            return this.isTrackInFavoritesByUrl(track);
+        }
+        return false;
+    }
+    
+    toggleFavorite(trackId) {
+        const track = this.searchResults.find(t => t.id === trackId);
+        if (!track) return;
+        
+        // Ensure favorite playlist exists
+        if (!this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
+            this.customPlaylists[this.FAVORITE_PLAYLIST_ID] = {
+                name: 'علاقه‌مندی‌ها',
+                tracks: [],
+                downloaded: false,
+                isFavorite: true
+            };
+        }
+        
+        const favoritePlaylist = this.customPlaylists[this.FAVORITE_PLAYLIST_ID];
+        
+        // Normalize URL for comparison
+        const normalizeUrl = (url) => {
+            if (!url) return '';
+            try {
+                const urlObj = new URL(url);
+                return urlObj.origin + urlObj.pathname;
+            } catch (e) {
+                return url.split('?')[0].split('#')[0];
+            }
+        };
+        
+        const trackUrl = normalizeUrl(track.url);
+        const trackPageUrl = track.pageUrl ? normalizeUrl(track.pageUrl) : null;
+        
+        // Check if track already exists by URL
+        const existingIndex = favoritePlaylist.tracks.findIndex(t => {
+            const existingUrl = normalizeUrl(t.url);
+            const existingPageUrl = t.pageUrl ? normalizeUrl(t.pageUrl) : null;
+            
+            return existingUrl === trackUrl || 
+                   (trackPageUrl && existingPageUrl === trackPageUrl) ||
+                   (trackPageUrl && existingUrl === trackPageUrl) ||
+                   (existingPageUrl && trackUrl === existingPageUrl);
+        });
+        
+        if (existingIndex !== -1) {
+            // Remove from favorites
+            favoritePlaylist.tracks.splice(existingIndex, 1);
+            this.saveCustomPlaylists();
+            this.showToast('آهنگ از علاقه‌مندی‌ها حذف شد', 'success');
+        } else {
+            // Add to favorites
+            favoritePlaylist.tracks.push({...track});
+            this.saveCustomPlaylists();
+            this.showToast('آهنگ به علاقه‌مندی‌ها اضافه شد', 'success');
+        }
     }
 
 
@@ -1263,6 +1495,28 @@ class MusicPlayer {
             }
         }
         
+        // Initialize favorite playlist if it doesn't exist
+        if (!this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
+            this.customPlaylists[this.FAVORITE_PLAYLIST_ID] = {
+                name: 'علاقه‌مندی‌ها',
+                tracks: [],
+                downloaded: false,
+                isFavorite: true // Mark as favorite playlist
+            };
+            this.saveCustomPlaylists();
+        }
+        
+        // Initialize favorite playlist if it doesn't exist
+        if (!this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
+            this.customPlaylists[this.FAVORITE_PLAYLIST_ID] = {
+                name: 'علاقه‌مندی‌ها',
+                tracks: [],
+                downloaded: false,
+                isFavorite: true // Mark as favorite playlist
+            };
+            this.saveCustomPlaylists();
+        }
+        
         const savedNextId = localStorage.getItem('mytehranNextPlaylistId');
         if (savedNextId) {
             this.nextPlaylistId = parseInt(savedNextId);
@@ -1272,7 +1526,7 @@ class MusicPlayer {
         // This prevents error during initialization when currentPage is not set yet
     }
 
-    createNewPlaylist() {
+    createNewPlaylist(trackToAdd = null) {
         const name = prompt('نام پلی‌لیست را وارد کنید:');
         if (!name || !name.trim()) {
             return;
@@ -1285,8 +1539,19 @@ class MusicPlayer {
             downloaded: false
         };
         
+        // If track is provided, add it to the new playlist
+        if (trackToAdd) {
+            this.addTrackToCustomPlaylist(id, trackToAdd);
+        }
+        
         this.saveCustomPlaylists();
-        this.displayCustomPlaylistsMain();
+        
+        // Only display if we're on playlists page
+        if (this.currentPage === 'playlists') {
+            this.displayCustomPlaylistsMain();
+        }
+        
+        return id; // Return the new playlist ID
     }
 
     displayCustomPlaylists() {
@@ -1356,19 +1621,127 @@ class MusicPlayer {
         });
     }
 
-    selectCustomPlaylist(playlistId) {
+    selectCustomPlaylist(playlistId, autoPlay = false) {
         const playlist = this.customPlaylists[playlistId];
-        if (!playlist) return;
+        if (!playlist) {
+            console.error('Playlist not found:', playlistId);
+            return;
+        }
+        
+        if (playlist.tracks.length === 0) {
+            this.showError('پلی‌لیست خالی است');
+            return;
+        }
         
         this.currentPlaylistId = playlistId;
         this.playlist = [...playlist.tracks];
-        this.currentIndex = -1;
-        this.updatePlaylistDisplay();
-            this.displayCustomPlaylistsMain();
-        this.savePlaylist();
+        
+        // Show playlist detail page
+        this.showPlaylistDetail(playlistId, playlist);
+        
+        // If autoPlay is true, play the first track
+        if (autoPlay) {
+            this.currentIndex = 0;
+            const firstTrack = this.playlist[0];
+            if (firstTrack) {
+                this.loadAndPlay(firstTrack);
+            }
+            this.savePlaylist();
+        }
         
         // Add to recent playlists
         this.addToRecentPlaylists(playlistId, playlist.name, playlist.tracks);
+    }
+    
+    showPlaylistDetail(playlistId, playlist) {
+        // If playlist is not provided, get it from customPlaylists
+        if (!playlist && playlistId) {
+            playlist = this.customPlaylists[playlistId];
+        }
+        
+        if (!playlist) {
+            console.error('Playlist not found:', playlistId);
+            return;
+        }
+        
+        // Ensure tracks array exists
+        if (!playlist.tracks || !Array.isArray(playlist.tracks)) {
+            console.warn('Playlist tracks is not an array:', playlist);
+            playlist.tracks = [];
+        }
+        
+        // Hide all pages
+        Object.values(this.pages).forEach(p => {
+            if (p) {
+                p.classList.remove('active');
+                p.style.display = 'none';
+                p.style.visibility = 'hidden';
+            }
+        });
+        
+        // Show playlist detail page
+        if (this.playlistDetailPage) {
+            this.playlistDetailPage.classList.add('active');
+            this.playlistDetailPage.style.display = 'block';
+            this.playlistDetailPage.style.visibility = 'visible';
+            
+            // Set title
+            const titleEl = document.getElementById('playlistDetailTitle');
+            if (titleEl) {
+                titleEl.textContent = playlist.name || 'پلی‌لیست';
+            }
+            
+            // Set current playlist for playback
+            this.currentPlaylistId = playlistId;
+            this.playlist = playlist.tracks;
+            
+            // Display tracks
+            this.displayPlaylistTracks(playlist.tracks);
+        }
+    }
+    
+    displayPlaylistTracks(tracks) {
+        if (!this.playlistTracksContainer) {
+            console.error('playlistTracksContainer not found');
+            return;
+        }
+        
+        this.playlistTracksContainer.innerHTML = '';
+        
+        if (!tracks || tracks.length === 0) {
+            this.playlistTracksContainer.innerHTML = '<p class="empty-state">این پلی‌لیست خالی است</p>';
+            return;
+        }
+        
+        console.log('Displaying playlist tracks:', tracks.length, tracks);
+        
+        tracks.forEach((track, index) => {
+            if (!track) {
+                console.warn('Invalid track at index', index);
+                return;
+            }
+            
+            // Ensure track has required properties
+            if (!track.title) {
+                console.warn('Track missing title at index', index, track);
+                track.title = 'بدون عنوان';
+            }
+            if (!track.artist) {
+                console.warn('Track missing artist at index', index, track);
+                track.artist = 'ناشناس';
+            }
+            if (!track.id) {
+                track.id = Date.now() + index;
+            }
+            
+            console.log('Creating track element:', track.title, track.artist, track);
+            const trackElement = this.createTrackElement(track, 'playlist-detail', index);
+            if (trackElement) {
+                this.playlistTracksContainer.appendChild(trackElement);
+            } else {
+                console.error('Failed to create track element for:', track);
+            }
+        });
     }
 
     async downloadPlaylist(playlistId) {
@@ -1482,6 +1855,12 @@ class MusicPlayer {
     }
 
     deletePlaylist(playlistId) {
+        // Prevent deletion of favorite playlist
+        if (playlistId === this.FAVORITE_PLAYLIST_ID) {
+            this.showError('نمی‌توان پلی‌لیست علاقه‌مندی‌ها را حذف کرد');
+            return;
+        }
+        
         if (confirm('آیا مطمئن هستید که می‌خواهید این پلی‌لیست را حذف کنید؟')) {
             delete this.customPlaylists[playlistId];
             if (this.currentPlaylistId === playlistId) {
@@ -1497,10 +1876,40 @@ class MusicPlayer {
 
     addTrackToCustomPlaylist(playlistId, track) {
         const playlist = this.customPlaylists[playlistId];
-        if (!playlist) return;
+        if (!playlist) {
+            console.error('Playlist not found:', playlistId);
+            return;
+        }
         
-        // Check if track already exists
-        if (playlist.tracks.find(t => t.id === track.id)) {
+        // Normalize URL for comparison (remove query params, fragments, etc.)
+        const normalizeUrl = (url) => {
+            if (!url) return '';
+            try {
+                const urlObj = new URL(url);
+                // Compare based on pathname and hostname, ignore query params
+                return urlObj.origin + urlObj.pathname;
+            } catch (e) {
+                // If URL parsing fails, use as is
+                return url.split('?')[0].split('#')[0];
+            }
+        };
+        
+        const trackUrl = normalizeUrl(track.url);
+        const trackPageUrl = track.pageUrl ? normalizeUrl(track.pageUrl) : null;
+        
+        // Check if track already exists by URL (more reliable than ID)
+        const existingTrack = playlist.tracks.find(t => {
+            const existingUrl = normalizeUrl(t.url);
+            const existingPageUrl = t.pageUrl ? normalizeUrl(t.pageUrl) : null;
+            
+            // Check if URLs match (either direct URL or page URL)
+            return existingUrl === trackUrl || 
+                   (trackPageUrl && existingPageUrl === trackPageUrl) ||
+                   (trackPageUrl && existingUrl === trackPageUrl) ||
+                   (existingPageUrl && trackUrl === existingPageUrl);
+        });
+        
+        if (existingTrack) {
             this.showError('این موزیک قبلا در پلی‌لیست است');
             return;
         }
@@ -1508,7 +1917,35 @@ class MusicPlayer {
         playlist.tracks.push({...track});
         playlist.downloaded = false; // Reset download status
         this.saveCustomPlaylists();
-        this.displayCustomPlaylists();
+        
+        // Only display if we're on playlists page
+        if (this.currentPage === 'playlists') {
+            this.displayCustomPlaylistsMain();
+        }
+        
+        // Also update search results if track is displayed there
+        this.updateTrackElementInResults(track.id);
+    }
+    
+    updateTrackElementInResults(trackId) {
+        // Update heart icon in search results if track is displayed
+        const trackElement = document.querySelector(`[data-track-id="${trackId}"]`);
+        if (trackElement) {
+            const heartBtn = trackElement.querySelector('.btn-favorite');
+            const heartIcon = trackElement.querySelector('.heart-icon');
+            if (heartBtn && heartIcon) {
+                const isFav = this.isTrackInFavorites(trackId);
+                if (isFav) {
+                    heartBtn.classList.add('favorite-active');
+                    heartBtn.title = 'حذف از علاقه‌مندی‌ها';
+                    heartIcon.setAttribute('fill', 'currentColor');
+                } else {
+                    heartBtn.classList.remove('favorite-active');
+                    heartBtn.title = 'اضافه به علاقه‌مندی‌ها';
+                    heartIcon.setAttribute('fill', 'none');
+                }
+            }
+        }
     }
 
     removeTrackFromPlaylist(playlistId, trackIndex) {
@@ -1601,6 +2038,46 @@ class MusicPlayer {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+    
+    showToast(message, type = 'success') {
+        if (!this.toastContainer) {
+            console.warn('Toast container not found');
+            return;
+        }
+        
+        // Remove existing toast if any
+        const existingToast = this.toastContainer.querySelector('.toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <div class="toast-content">
+                <span class="toast-message">${this.escapeHtml(message)}</span>
+            </div>
+        `;
+        
+        // Add to container
+        this.toastContainer.appendChild(toast);
+        
+        // Trigger animation
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        // Auto remove after 2 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300); // Wait for animation to complete
+        }, 2000);
     }
 
     setupNavigation() {
@@ -1727,19 +2204,21 @@ class MusicPlayer {
         // Show last 10 playlists
         const playlistsToShow = this.recentPlaylists.slice(-10).reverse();
         playlistsToShow.forEach(({ id, name, tracks }) => {
+            // Ensure tracks is a number
+            const tracksCount = typeof tracks === 'number' ? tracks : (Array.isArray(tracks) ? tracks.length : 0);
+            
             const playlistEl = document.createElement('div');
             playlistEl.className = 'recent-playlist-item';
             playlistEl.innerHTML = `
                 <div class="playlist-info">
-                    <h4>${this.escapeHtml(name)}</h4>
-                    <p>${tracks.length} موزیک</p>
+                    <h4>${this.escapeHtml(name || 'بدون نام')}</h4>
+                    <p>${tracksCount} موزیک</p>
                 </div>
                 <button class="btn btn-small btn-play-playlist" data-playlist-id="${id}">▶ پخش</button>
             `;
             
             playlistEl.querySelector('.btn-play-playlist').addEventListener('click', () => {
                 this.selectCustomPlaylist(id);
-                this.navigateToPage('playlists');
             });
             
             this.recentPlaylistsContainer.appendChild(playlistEl);
@@ -1983,39 +2462,66 @@ class MusicPlayer {
             return;
         }
         
-        playlists.forEach(([id, playlist]) => {
+        // Sort playlists: favorite first, then others
+        const sortedPlaylists = playlists.sort(([id1, p1], [id2, p2]) => {
+            if (id1 === this.FAVORITE_PLAYLIST_ID) return -1;
+            if (id2 === this.FAVORITE_PLAYLIST_ID) return 1;
+            return 0;
+        });
+        
+        sortedPlaylists.forEach(([id, playlist]) => {
+            const isFavorite = id === this.FAVORITE_PLAYLIST_ID;
             const playlistEl = document.createElement('div');
             playlistEl.className = 'custom-playlist-item-main';
+            if (isFavorite) {
+                playlistEl.classList.add('favorite-playlist');
+            }
+            
+            // Check if this playlist is currently selected
+            const isSelected = this.currentPlaylistId === id;
             
             playlistEl.innerHTML = `
                 <div class="playlist-info-main">
-                    <h3>${this.escapeHtml(playlist.name)}</h3>
-                    <p>${playlist.tracks.length} موزیک</p>
-                    ${playlist.downloaded ? '<span class="downloaded-badge">✓ دانلود شده</span>' : ''}
+                    <div class="playlist-header-main">
+                        <h3>${this.escapeHtml(playlist.name)} ${isFavorite ? '<span class="favorite-icon">❤️</span>' : ''}</h3>
+                        ${isSelected ? '<span class="playing-badge">در حال پخش</span>' : ''}
+                    </div>
+                    <p class="playlist-meta">${playlist.tracks.length} موزیک ${playlist.downloaded ? '• ✓ دانلود شده' : ''}</p>
                 </div>
                 <div class="playlist-actions-main">
-                    <button class="btn btn-small btn-play-playlist-main" data-playlist-id="${id}" title="پخش">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <button class="btn btn-small btn-play-playlist-main ${isSelected ? 'active' : ''}" data-playlist-id="${id}" title="پخش">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M8 5v14l11-7z"/>
                         </svg>
                     </button>
                     <button class="btn btn-small btn-download-playlist-main" data-playlist-id="${id}" title="دانلود">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                         </svg>
                     </button>
                     <button class="btn btn-small btn-edit-playlist-main" data-playlist-id="${id}" title="ویرایش">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                         </svg>
                     </button>
+                    ${!isFavorite ? `
                     <button class="btn btn-small btn-delete-playlist-main" data-playlist-id="${id}" title="حذف">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                         </svg>
                     </button>
+                    ` : ''}
                 </div>
             `;
+            
+            // Make the whole playlist item clickable (except buttons)
+            playlistEl.style.cursor = 'pointer';
+            playlistEl.addEventListener('click', (e) => {
+                // Only trigger if click is not on a button
+                if (!e.target.closest('button')) {
+                    this.selectCustomPlaylist(id);
+                }
+            });
             
             // Attach event listeners with error handling
             const playBtn = playlistEl.querySelector('.btn-play-playlist-main');
@@ -2113,10 +2619,14 @@ class MusicPlayer {
     }
 
     addToRecentPlaylists(playlistId, playlistName, tracks) {
+        // Ensure tracks is an array
+        const tracksArray = Array.isArray(tracks) ? tracks : [];
+        const tracksCount = tracksArray.length;
+        
         // Remove if already exists
         this.recentPlaylists = this.recentPlaylists.filter(p => p.id !== playlistId);
         // Add to beginning
-        this.recentPlaylists.unshift({ id: playlistId, name: playlistName, tracks: tracks.length });
+        this.recentPlaylists.unshift({ id: playlistId, name: playlistName, tracks: tracksCount });
         // Keep only last 20
         this.recentPlaylists = this.recentPlaylists.slice(0, 20);
         this.saveRecentData();
@@ -2216,6 +2726,68 @@ class MusicPlayer {
             if (loader) {
                 loader.style.display = this.hasMoreResults ? 'flex' : 'none';
             }
+        }
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    async resetAllData() {
+        // Confirm with user
+        if (!confirm('آیا مطمئن هستید که می‌خواهید همه داده‌ها و کش را پاک کنید؟\n\nاین عمل غیرقابل بازگشت است و:\n- همه پلی‌لیست‌ها حذف می‌شوند\n- تاریخچه جستجو پاک می‌شود\n- موزیک‌های اخیر پاک می‌شوند\n- همه کش‌ها پاک می‌شوند')) {
+            return;
+        }
+        
+        // Show loading
+        this.showLoading(true);
+        this.showError('در حال پاک کردن داده‌ها و کش...');
+        
+        try {
+            // Clear all localStorage
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('mytehran')) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            
+            // Clear Service Worker cache
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(
+                    cacheNames.map(cacheName => {
+                        if (cacheName.startsWith('mytehran')) {
+                            return caches.delete(cacheName);
+                        }
+                    })
+                );
+            }
+            
+            // Unregister service worker
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(
+                    registrations.map(registration => registration.unregister())
+                );
+            }
+            
+            this.showLoading(false);
+            this.showError('همه داده‌ها و کش پاک شد. صفحه در حال بارگذاری مجدد...');
+            
+            // Reload page after a short delay
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 1500);
+            
+        } catch (error) {
+            console.error('Error resetting data:', error);
+            this.showLoading(false);
+            this.showError('خطا در پاک کردن داده‌ها: ' + error.message);
         }
     }
 }
