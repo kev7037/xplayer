@@ -1,24 +1,27 @@
 // Service Worker for MyTehran Music Player PWA
-const CACHE_NAME = 'mytehran-music-v3';
+// DISABLED: No cache for code files (HTML/CSS/JS) - only cache audio files
+const CACHE_NAME = 'mytehran-music-v4-disabled';
 const AUDIO_CACHE_NAME = 'mytehran-audio-v1';
 const MAX_AUDIO_CACHE_SIZE = 50 * 1024 * 1024; // 50MB limit for audio cache
 
-const urlsToCache = [
-  './',
-  './index.html',
-  './style.css',
-  './app.js',
-  './manifest.json'
-];
+// Don't cache code files - always fetch from network
+const urlsToCache = [];
 
-// Install event - cache resources
+// Install event - skip caching code files
 self.addEventListener('install', (event) => {
+  console.log('Service Worker: Install - Code caching disabled');
+  // Delete old caches
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName.startsWith('mytehran-music-')) {
+            console.log('Deleting old code cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
   );
   self.skipWaiting(); // Activate immediately
 });
@@ -26,6 +29,16 @@ self.addEventListener('install', (event) => {
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  
+  // Skip service worker for code files - let browser handle them directly
+  const isCodeFile = url.pathname.match(/\.(html|css|js|json)$/i) || 
+                     url.pathname === '/' ||
+                     (url.pathname.endsWith('/') && url.hostname === self.location.hostname);
+  
+  // Don't intercept code files - let them load directly from network
+  if (isCodeFile) {
+    return; // Let browser handle it normally
+  }
   
   // Check if it's an audio file
   const isAudioFile = url.pathname.match(/\.(mp3|m4a|ogg|wav)$/i) || 
@@ -65,13 +78,14 @@ self.addEventListener('fetch', (event) => {
       })
     );
   } else {
-    // For other files, use Network First strategy
+    // For other files (images, etc.), use network first
     event.respondWith(
-      caches.match(event.request)
-        .then((response) => {
-          // Return cached version or fetch from network
-          return response || fetch(event.request);
-        })
+      fetch(event.request, {
+        cache: 'no-store'
+      }).catch(() => {
+        // Try cache as fallback for non-code files
+        return caches.match(event.request);
+      })
     );
   }
 });
@@ -110,18 +124,22 @@ async function cleanupAudioCache() {
   }
 }
 
-// Activate event - clean up old caches
+// Activate event - clean up old code caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
+          // Delete all old code caches (keep only audio cache)
+          if (cacheName.startsWith('mytehran-music-')) {
+            console.log('Deleting old code cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      // Claim all clients to ensure they use the new service worker
+      return self.clients.claim();
     })
   );
 });
