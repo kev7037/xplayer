@@ -20,6 +20,7 @@ class MusicPlayer {
         
         this.initializeElements();
         this.attachEventListeners();
+        this.setupMediaSession();
         this.loadPlaylist();
         this.loadCustomPlaylists();
         this.loadRecentData();
@@ -128,6 +129,12 @@ class MusicPlayer {
         this.audioPlayer.addEventListener('error', (e) => {
             this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
             this.playNext();
+        });
+        this.audioPlayer.addEventListener('play', () => {
+            this.updateMediaSessionPlaybackState();
+        });
+        this.audioPlayer.addEventListener('pause', () => {
+            this.updateMediaSessionPlaybackState();
         });
         this.audioPlayer.addEventListener('timeupdate', () => {
             this.updateProgressBar();
@@ -1044,6 +1051,9 @@ class MusicPlayer {
             this.bottomPlayerBar.style.display = 'flex';
         }
         
+        // Update Media Session metadata for Bluetooth controls
+        this.updateMediaSessionMetadata(track);
+        
         // Reset progress bar
         if (this.playerBarProgressFill) {
             this.playerBarProgressFill.style.width = '0%';
@@ -1120,6 +1130,7 @@ class MusicPlayer {
                     this.bottomPlayerBar.style.display = 'block';
                 }
                 this.updatePlayButton();
+                this.updateMediaSessionPlaybackState();
                 // Add to recent tracks
                 this.addToRecentTracks(track);
             }).catch(err => {
@@ -1158,6 +1169,7 @@ class MusicPlayer {
                 this.audioPlayer.play().then(() => {
                     // Add to recent tracks when play succeeds
                     this.addToRecentTracks(track);
+                    this.updateMediaSessionPlaybackState();
                 }).catch(err => {
                     console.error('Play error:', err);
                     this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
@@ -1266,6 +1278,106 @@ class MusicPlayer {
         }
     }
 
+    setupMediaSession() {
+        // Check if Media Session API is supported
+        if (!('mediaSession' in navigator)) {
+            console.log('Media Session API not supported');
+            return;
+        }
+
+        // Set up action handlers for Bluetooth/remote controls
+        navigator.mediaSession.setActionHandler('play', () => {
+            console.log('Media Session: play action');
+            if (this.audioPlayer.paused) {
+                if (this.currentIndex === -1 && this.playlist.length > 0) {
+                    this.currentIndex = 0;
+                    this.loadAndPlay(this.playlist[0]);
+                } else {
+                    this.audioPlayer.play();
+                }
+                this.updatePlayButton();
+            }
+        });
+
+        navigator.mediaSession.setActionHandler('pause', () => {
+            console.log('Media Session: pause action');
+            if (!this.audioPlayer.paused) {
+                this.audioPlayer.pause();
+                this.updatePlayButton();
+            }
+        });
+
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+            console.log('Media Session: previous track action');
+            this.playPrevious();
+        });
+
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+            console.log('Media Session: next track action');
+            this.playNext();
+        });
+
+        // Optional: seekbackward and seekforward
+        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+            console.log('Media Session: seek backward', details);
+            const skipTime = details.seekOffset || 10;
+            this.audioPlayer.currentTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
+        });
+
+        navigator.mediaSession.setActionHandler('seekforward', (details) => {
+            console.log('Media Session: seek forward', details);
+            const skipTime = details.seekOffset || 10;
+            this.audioPlayer.currentTime = Math.min(
+                this.audioPlayer.duration,
+                this.audioPlayer.currentTime + skipTime
+            );
+        });
+
+        console.log('Media Session API initialized');
+    }
+
+    updateMediaSessionMetadata(track) {
+        // Check if Media Session API is supported
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        if (!track) {
+            navigator.mediaSession.metadata = null;
+            return;
+        }
+
+        // Update metadata for Bluetooth/remote controls
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: track.title || '-',
+            artist: track.artist || '-',
+            album: track.album || '',
+            artwork: [
+                {
+                    src: track.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E',
+                    sizes: '512x512',
+                    type: 'image/png'
+                }
+            ]
+        });
+
+        // Update playback state
+        this.updateMediaSessionPlaybackState();
+    }
+
+    updateMediaSessionPlaybackState() {
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        // Update playback state for Media Session
+        if (this.audioPlayer.paused) {
+            navigator.mediaSession.playbackState = 'paused';
+        } else {
+            navigator.mediaSession.playbackState = 'playing';
+        }
+    }
+
     togglePlayPause() {
         if (this.audioPlayer.paused) {
             if (this.currentIndex === -1 && this.playlist.length > 0) {
@@ -1278,6 +1390,7 @@ class MusicPlayer {
             this.audioPlayer.pause();
         }
         this.updatePlayButton();
+        this.updateMediaSessionPlaybackState();
     }
 
     playNext() {
