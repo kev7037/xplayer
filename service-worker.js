@@ -46,29 +46,42 @@ self.addEventListener('fetch', (event) => {
                       url.hostname.includes('mytehranmusic.com') && url.pathname.includes('.mp3');
   
   if (isAudioFile) {
-    // Cache First strategy for audio files
+    // Network First strategy for audio files (to ensure fresh content)
+    // But cache successful responses for offline use
     event.respondWith(
       caches.open(AUDIO_CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            // Return cached version
-            return cachedResponse;
-          }
-          
-          // Fetch from network and cache it
-          return fetch(event.request).then((response) => {
-            // Only cache successful responses
-            if (response.status === 200) {
-              // Clone the response before caching
-              const responseToCache = response.clone();
-              cache.put(event.request, responseToCache);
-              
+        // Try network first
+        return fetch(event.request).then((response) => {
+          // Only cache successful responses
+          if (response && response.status === 200 && response.ok) {
+            // Check if response type allows caching
+            // Opaque responses cannot be cached
+            if (response.type === 'opaque' || response.type === 'opaqueredirect') {
+              // Cannot cache opaque responses - return without caching
+              console.log('Service Worker: Cannot cache opaque response (CORS) for', event.request.url.substring(event.request.url.lastIndexOf('/') + 1));
+              return response;
+            }
+            
+            // Clone the response before caching
+            const responseToCache = response.clone();
+            // Cache in background (don't wait for it)
+            cache.put(event.request, responseToCache).then(() => {
+              console.log('Service Worker: ✅ Audio cached successfully -', event.request.url.substring(event.request.url.lastIndexOf('/') + 1));
               // Clean up old cache if it gets too large
               cleanupAudioCache();
+            }).catch((cacheError) => {
+              console.warn('Service Worker: ⚠️ Failed to cache audio -', cacheError.message);
+            });
+          }
+          return response;
+        }).catch((fetchError) => {
+          // Network failed - try cache as fallback
+          return cache.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+              console.log('Service Worker: 📦 Serving from cache (offline) -', event.request.url.substring(event.request.url.lastIndexOf('/') + 1));
+              return cachedResponse;
             }
-            return response;
-          }).catch(() => {
-            // If network fails and no cache, return a placeholder or error
+            // No cache and network failed
             return new Response('Audio not available offline', {
               status: 503,
               statusText: 'Service Unavailable'

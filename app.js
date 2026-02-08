@@ -18,6 +18,20 @@ class MusicPlayer {
         this.FAVORITE_PLAYLIST_ID = 'favorite'; // Special ID for favorite playlist
         this.previousPage = null; // Store previous page for player page navigation
         
+        // Media Session - track previous button clicks and track start time
+        this.trackStartTime = null; // When current track started playing
+        this.isSeekingBackward = false;
+        this.isSeekingForward = false;
+        this.seekInterval = null;
+        this.seekBackwardStartTime = null;
+        this.seekForwardStartTime = null;
+        this.lastPreviousTrackTime = null; // Last time previoustrack was called
+        this.lastNextTrackTime = null; // Last time nexttrack was called
+        this.previousTrackTimeout = null; // Timeout to detect button hold
+        this.nextTrackTimeout = null; // Timeout to detect button hold
+        this.isHoldingPrevious = false; // Flag to track if previous button is being held
+        this.isHoldingNext = false; // Flag to track if next button is being held
+        
         this.initializeElements();
         this.attachEventListeners();
         this.setupMediaSession();
@@ -29,6 +43,7 @@ class MusicPlayer {
         // Use setTimeout to ensure DOM is fully ready and all data is loaded
         setTimeout(() => {
             this.setupNavigation();
+            this.showCacheHelper();
         }, 100);
     }
 
@@ -1051,6 +1066,12 @@ class MusicPlayer {
             this.bottomPlayerBar.style.display = 'flex';
         }
         
+        // Track when this track started playing (for previous button logic)
+        this.trackStartTime = Date.now();
+        
+        // Track when this track started playing (for previous button logic)
+        this.trackStartTime = Date.now();
+        
         // Update Media Session metadata for Bluetooth controls
         this.updateMediaSessionMetadata(track);
         
@@ -1124,13 +1145,39 @@ class MusicPlayer {
             this.audioPlayer.play().then(() => {
                 // Success - remove error handler and cache
                 this.audioPlayer.removeEventListener('error', handleAudioError);
+                
+                // Check cache status immediately
                 this.cacheAudio(audioUrl);
+                
+                // Check cache status again after audio loads (Service Worker caches when audio is fetched)
+                // Audio element loading triggers Service Worker fetch which may cache it
+                const checkCacheAfterLoad = async () => {
+                    // Wait for audio to start loading
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                    // Check cache status again
+                    const isCached = await this.isAudioCached(audioUrl);
+                    if (isCached) {
+                        console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
+                    } else {
+                        // Check one more time after longer delay
+                        setTimeout(async () => {
+                            const isCachedLater = await this.isAudioCached(audioUrl);
+                            if (isCachedLater) {
+                                console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
+                            }
+                        }, 3000);
+                    }
+                };
+                checkCacheAfterLoad();
+                
                 // Show bottom player bar - player section is in playerPage
                 if (this.bottomPlayerBar) {
                     this.bottomPlayerBar.style.display = 'block';
                 }
                 this.updatePlayButton();
                 this.updateMediaSessionPlaybackState();
+                // Track when track started playing
+                this.trackStartTime = Date.now();
                 // Add to recent tracks
                 this.addToRecentTracks(track);
             }).catch(err => {
@@ -1167,6 +1214,8 @@ class MusicPlayer {
                 this.audioPlayer.src = url;
                 this.cacheAudio(url);
                 this.audioPlayer.play().then(() => {
+                    // Track when track started playing
+                    this.trackStartTime = Date.now();
                     // Add to recent tracks when play succeeds
                     this.addToRecentTracks(track);
                     this.updateMediaSessionPlaybackState();
@@ -1309,28 +1358,24 @@ class MusicPlayer {
 
         navigator.mediaSession.setActionHandler('previoustrack', () => {
             console.log('Media Session: previous track action');
-            this.playPrevious();
+            this.handlePreviousTrackButton();
         });
 
         navigator.mediaSession.setActionHandler('nexttrack', () => {
             console.log('Media Session: next track action');
-            this.playNext();
+            this.handleNextTrackButton();
         });
 
-        // Optional: seekbackward and seekforward
+        // Seek backward (holding previous button)
         navigator.mediaSession.setActionHandler('seekbackward', (details) => {
             console.log('Media Session: seek backward', details);
-            const skipTime = details.seekOffset || 10;
-            this.audioPlayer.currentTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
+            this.handleSeekBackward(details);
         });
 
+        // Seek forward (holding next button)
         navigator.mediaSession.setActionHandler('seekforward', (details) => {
             console.log('Media Session: seek forward', details);
-            const skipTime = details.seekOffset || 10;
-            this.audioPlayer.currentTime = Math.min(
-                this.audioPlayer.duration,
-                this.audioPlayer.currentTime + skipTime
-            );
+            this.handleSeekForward(details);
         });
 
         console.log('Media Session API initialized');
@@ -1375,6 +1420,249 @@ class MusicPlayer {
             navigator.mediaSession.playbackState = 'paused';
         } else {
             navigator.mediaSession.playbackState = 'playing';
+        }
+    }
+
+    handlePreviousTrackButton() {
+        const now = Date.now();
+        
+        // Check if button is being held (called repeatedly within 500ms)
+        if (this.lastPreviousTrackTime && (now - this.lastPreviousTrackTime) < 500) {
+            // Button is being held - start seeking backward
+            console.log('Previous button held - seeking backward');
+            if (!this.isHoldingPrevious) {
+                this.isHoldingPrevious = true;
+                this.isSeekingBackward = true;
+                this.startSeekingBackward();
+            }
+            
+            // Immediately seek back 3 seconds
+            const skipTime = 3;
+            const newTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
+            this.audioPlayer.currentTime = newTime;
+            
+            // Reset timeout
+            if (this.previousTrackTimeout) {
+                clearTimeout(this.previousTrackTimeout);
+            }
+            this.previousTrackTimeout = setTimeout(() => {
+                console.log('Previous button released - stopping seek');
+                this.isHoldingPrevious = false;
+                this.stopSeeking();
+            }, 500);
+            
+            this.lastPreviousTrackTime = now;
+            return;
+        }
+        
+        // Single press - check if less than 3 seconds have passed since track started
+        this.lastPreviousTrackTime = now;
+        const timeSinceTrackStart = this.trackStartTime ? (now - this.trackStartTime) / 1000 : Infinity;
+        
+        if (timeSinceTrackStart < 3) {
+            // Less than 3 seconds: go to previous track
+            console.log('Less than 3 seconds since track start: going to previous track');
+            this.playPrevious();
+        } else {
+            // More than 3 seconds: restart current track
+            console.log('More than 3 seconds since track start: restarting current track');
+            if (this.currentIndex >= 0 && this.playlist.length > 0) {
+                this.audioPlayer.currentTime = 0;
+                this.trackStartTime = Date.now(); // Reset start time
+                if (this.audioPlayer.paused) {
+                    this.audioPlayer.play();
+                    this.updatePlayButton();
+                }
+            }
+        }
+        
+        // Set timeout to detect if button is held
+        if (this.previousTrackTimeout) {
+            clearTimeout(this.previousTrackTimeout);
+        }
+        this.previousTrackTimeout = setTimeout(() => {
+            // No more presses - single press confirmed
+            this.lastPreviousTrackTime = null;
+        }, 500);
+    }
+
+    handleNextTrackButton() {
+        const now = Date.now();
+        
+        // Check if button is being held (called repeatedly within 500ms)
+        if (this.lastNextTrackTime && (now - this.lastNextTrackTime) < 500) {
+            // Button is being held - start seeking forward
+            console.log('Next button held - seeking forward');
+            if (!this.isHoldingNext) {
+                this.isHoldingNext = true;
+                this.isSeekingForward = true;
+                this.startSeekingForward();
+            }
+            
+            // Immediately seek forward 3 seconds
+            const skipTime = 3;
+            const newTime = Math.min(
+                this.audioPlayer.duration || Infinity,
+                this.audioPlayer.currentTime + skipTime
+            );
+            this.audioPlayer.currentTime = newTime;
+            
+            // Reset timeout
+            if (this.nextTrackTimeout) {
+                clearTimeout(this.nextTrackTimeout);
+            }
+            this.nextTrackTimeout = setTimeout(() => {
+                console.log('Next button released - stopping seek');
+                this.isHoldingNext = false;
+                this.stopSeeking();
+            }, 500);
+            
+            this.lastNextTrackTime = now;
+            return;
+        }
+        
+        // Single press - play next track
+        this.lastNextTrackTime = now;
+        console.log('Single next press - playing next track');
+        this.playNext();
+        
+        // Set timeout to detect if button is held
+        if (this.nextTrackTimeout) {
+            clearTimeout(this.nextTrackTimeout);
+        }
+        this.nextTrackTimeout = setTimeout(() => {
+            // No more presses - single press confirmed
+            this.lastNextTrackTime = null;
+        }, 500);
+    }
+
+    handlePreviousTrack() {
+        // This is kept for backward compatibility but now uses handlePreviousTrackButton
+        this.handlePreviousTrackButton();
+    }
+
+    handleSeekBackward(details) {
+        console.log('Media Session: seek backward', details);
+        
+        // Immediately seek back 3 seconds
+        const skipTime = 3;
+        const newTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
+        this.audioPlayer.currentTime = newTime;
+        
+        // When button is held, seekbackward is called repeatedly
+        // Start continuous seeking if not already started
+        if (!this.isSeekingBackward) {
+            this.isSeekingBackward = true;
+            this.seekBackwardStartTime = Date.now();
+            this.startSeekingBackward();
+        }
+        
+        // Reset timeout - if no more seeks come, stop seeking
+        // Use longer timeout to allow for button holding
+        if (this.seekBackwardTimeout) {
+            clearTimeout(this.seekBackwardTimeout);
+        }
+        this.seekBackwardTimeout = setTimeout(() => {
+            console.log('No more seek backward events, stopping');
+            this.stopSeeking();
+        }, 500); // Stop if no seek for 500ms
+    }
+
+    handleSeekForward(details) {
+        console.log('Media Session: seek forward', details);
+        
+        // Immediately seek forward 3 seconds
+        const skipTime = 3;
+        const newTime = Math.min(
+            this.audioPlayer.duration || Infinity,
+            this.audioPlayer.currentTime + skipTime
+        );
+        this.audioPlayer.currentTime = newTime;
+        
+        // When button is held, seekforward is called repeatedly
+        // Start continuous seeking if not already started
+        if (!this.isSeekingForward) {
+            this.isSeekingForward = true;
+            this.seekForwardStartTime = Date.now();
+            this.startSeekingForward();
+        }
+        
+        // Reset timeout - if no more seeks come, stop seeking
+        // Use longer timeout to allow for button holding
+        if (this.seekForwardTimeout) {
+            clearTimeout(this.seekForwardTimeout);
+        }
+        this.seekForwardTimeout = setTimeout(() => {
+            console.log('No more seek forward events, stopping');
+            this.stopSeeking();
+        }, 500); // Stop if no seek for 500ms
+    }
+
+    startSeekingBackward() {
+        console.log('Starting backward seek interval');
+        // Clear any existing interval
+        if (this.seekInterval) {
+            clearInterval(this.seekInterval);
+        }
+        
+        // Seek backward 3 seconds every second while button is held
+        this.seekInterval = setInterval(() => {
+            if (this.isSeekingBackward) {
+                const currentTime = this.audioPlayer.currentTime;
+                const newTime = Math.max(0, currentTime - 3);
+                this.audioPlayer.currentTime = newTime;
+                console.log('Seeking backward:', currentTime, '->', newTime);
+            } else {
+                console.log('Stopping backward seek (flag is false)');
+                this.stopSeeking();
+            }
+        }, 1000); // Every 1 second
+    }
+
+    startSeekingForward() {
+        console.log('Starting forward seek interval');
+        // Clear any existing interval
+        if (this.seekInterval) {
+            clearInterval(this.seekInterval);
+        }
+        
+        // Seek forward 3 seconds every second while button is held
+        this.seekInterval = setInterval(() => {
+            if (this.isSeekingForward) {
+                const currentTime = this.audioPlayer.currentTime;
+                const newTime = Math.min(
+                    this.audioPlayer.duration || Infinity,
+                    currentTime + 3
+                );
+                this.audioPlayer.currentTime = newTime;
+                console.log('Seeking forward:', currentTime, '->', newTime);
+            } else {
+                console.log('Stopping forward seek (flag is false)');
+                this.stopSeeking();
+            }
+        }, 1000); // Every 1 second
+    }
+
+    stopSeeking() {
+        console.log('Stopping seek, isSeekingBackward:', this.isSeekingBackward, 'isSeekingForward:', this.isSeekingForward);
+        this.isSeekingBackward = false;
+        this.isSeekingForward = false;
+        this.isHoldingPrevious = false;
+        this.isHoldingNext = false;
+        this.seekBackwardStartTime = null;
+        this.seekForwardStartTime = null;
+        if (this.seekInterval) {
+            clearInterval(this.seekInterval);
+            this.seekInterval = null;
+            console.log('Seek interval cleared');
+        }
+        if (this.seekBackwardTimeout) {
+            clearTimeout(this.seekBackwardTimeout);
+            this.seekBackwardTimeout = null;
+        }
+        if (this.seekForwardTimeout) {
+            clearTimeout(this.seekForwardTimeout);
+            this.seekForwardTimeout = null;
         }
     }
 
@@ -1575,21 +1863,104 @@ class MusicPlayer {
     }
 
     async cacheAudio(audioUrl) {
-        // Cache audio file using Service Worker
-        if ('serviceWorker' in navigator && 'caches' in window) {
-            try {
-                const cache = await caches.open('mytehran-audio-v1');
-                // Check if already cached
-                const cached = await cache.match(audioUrl);
-                if (!cached) {
-                    // Fetch and cache the audio
-                    await cache.add(audioUrl);
-                    console.log('Audio cached:', audioUrl);
-                }
-            } catch (error) {
-                console.warn('Failed to cache audio:', error);
-                // Don't show error to user, caching is optional
+        // Cache audio file directly using Cache API
+        if (!('serviceWorker' in navigator && 'caches' in window)) {
+            return false;
+        }
+        
+        try {
+            const cache = await caches.open('mytehran-audio-v1');
+            // Check if already cached
+            const cached = await cache.match(audioUrl);
+            if (cached) {
+                console.log('✅ Cache: Audio already cached -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
+                return true; // Already cached
             }
+            
+            // Not cached yet - Service Worker will cache it when audio element loads it
+            // Don't try to fetch with CORS as it causes 503 errors
+            // The audio element loads without CORS, and Service Worker intercepts and caches it
+            console.log('⬇️ Cache: Audio not cached yet - Service Worker will cache it when audio plays');
+            console.log('   File:', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
+            
+            // Service Worker will automatically cache when audio element loads the file
+            // Check cache status after delays to see if Service Worker cached it
+            const checkCacheStatus = async (delay, attempt) => {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                try {
+                    const cacheCheck = await caches.open('mytehran-audio-v1');
+                    const cachedAfterDelay = await cacheCheck.match(audioUrl);
+                    if (cachedAfterDelay) {
+                        console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
+                        return true;
+                    } else if (attempt < 3) {
+                        // Try again with longer delay
+                        return false;
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+                return false;
+            };
+            
+            // Check after 2, 5, and 10 seconds
+            checkCacheStatus(2000, 1);
+            checkCacheStatus(5000, 2);
+            checkCacheStatus(10000, 3);
+            
+            return false;
+        } catch (error) {
+            // Silently fail - caching is optional
+            return false;
+        }
+    }
+
+    // Check if audio is cached
+    async isAudioCached(audioUrl) {
+        if (!('serviceWorker' in navigator && 'caches' in window)) {
+            return false;
+        }
+        
+        try {
+            const cache = await caches.open('mytehran-audio-v1');
+            const cached = await cache.match(audioUrl);
+            return !!cached;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    // Get all cached audio URLs (for debugging)
+    async getCachedAudioList() {
+        if (!('serviceWorker' in navigator && 'caches' in window)) {
+            console.log('Cache: Service Worker not available');
+            return [];
+        }
+        
+        try {
+            const cache = await caches.open('mytehran-audio-v1');
+            const keys = await cache.keys();
+            const urls = keys.map(request => request.url);
+            console.log('📦 Cached audio files (' + urls.length + '):');
+            urls.forEach((url, index) => {
+                const fileName = url.substring(url.lastIndexOf('/') + 1);
+                console.log(`  ${index + 1}. ${fileName}`);
+            });
+            return urls;
+        } catch (error) {
+            console.error('Error getting cached audio list:', error);
+            return [];
+        }
+    }
+
+    // Show cache helper in console
+    showCacheHelper() {
+        if (window.musicPlayer && typeof window.musicPlayer.getCachedAudioList === 'function') {
+            console.log('%c📦 Cache Helper', 'color: #4CAF50; font-weight: bold; font-size: 14px;');
+            console.log('Use these commands in console to check cache status:');
+            console.log('  • musicPlayer.getCachedAudioList() - List all cached audio files');
+            console.log('  • musicPlayer.isAudioCached("URL") - Check if specific audio is cached');
+            console.log('  Example: musicPlayer.isAudioCached(musicPlayer.playlist[0].url)');
         }
     }
 
