@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="پخش کننده موزیک MyTehran با قابلیت پلی‌لیست و shuffle">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>MyTehran Music Player</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==">
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="container">
+                <!-- Home Page -->
+                <div id="homePage" class="page active">
+                    <div class="page-header">
+                        <h1>خانه</h1>
+                    </div>
+                    
+                    <!-- Recent Tracks -->
+                    <section class="content-section">
+                        <h2 class="section-title">موزیک‌های اخیر</h2>
+                        <div id="recentTracks" class="tracks-grid">
+                            <p class="empty-state">هیچ موزیکی پخش نشده است</p>
+                        </div>
+                    </section>
+                    
+                    <!-- Recent Playlists -->
+                    <section class="content-section">
+                        <h2 class="section-title">پلی‌لیست‌های اخیر</h2>
+                        <div id="recentPlaylists" class="playlists-grid">
+                            <p class="empty-state">هیچ پلی‌لیستی پخش نشده است</p>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Search Page -->
+                <div id="searchPage" class="page">
+                    <div class="page-header">
+                        <h1>جستجو</h1>
+                    </div>
+                    
+                    <section class="content-section">
+                        <div class="search-box-large">
+                            <input 
+                                type="text" 
+                                id="searchInputMain" 
+                                placeholder="جستجوی موزیک، خواننده..."
+                                autocomplete="off"
+                            >
+                            <button id="searchBtnMain" class="btn btn-primary">جستجو</button>
+                        </div>
+                        
+                        <div id="searchHistory" class="search-history">
+                            <h3 class="history-title">جستجوهای اخیر</h3>
+                            <div id="searchHistoryList" class="history-list">
+                                <p class="empty-state">هیچ جستجویی انجام نشده است</p>
+                            </div>
+                        </div>
+                        
+                        <div id="searchResultsMain" class="results-section-main">
+                            <h3 class="results-title">نتایج جستجو</h3>
+                            <div id="resultsContainerMain" class="results-container-main">
+                                <p class="empty-state">برای جستجو، نام موزیک را وارد کنید</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Playlists Page -->
+                <div id="playlistsPage" class="page">
+                    <div class="page-header">
+                        <h1>پلی‌لیست‌های من</h1>
+                        <button id="createPlaylistBtnMain" class="btn btn-primary">➕ پلی‌لیست جدید</button>
+                    </div>
+                    
+                    <section class="content-section">
+                        <div id="playlistsListMain" class="playlists-list-main">
+                            <p class="empty-state">هیچ پلی‌لیستی وجود ندارد</p>
+                        </div>
+                    </section>
+                </div>
+
+        <!-- Player Controls -->
+        <section class="player-section" id="playerSection" style="display: none;">
+            <div class="now-playing">
+                <div class="current-track-image">
+                    <img id="currentTrackImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23b3b3b3'%3E%3Cpath d='M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'/%3E%3C/svg%3E" alt="Track Cover">
+                </div>
+                <div class="track-info">
+                    <h3 id="currentTrack">-</h3>
+                    <p id="currentArtist">-</p>
+                </div>
+            </div>
+            <div class="audio-player-wrapper">
+                <audio id="audioPlayer" class="audioPlayer" controls></audio>
+            </div>
+            
+            <div class="player-controls">
+                <button id="shuffleBtn" class="btn btn-icon" title="Shuffle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+                    </svg>
+                </button>
+                <button id="nextBtn" class="btn btn-icon" title="Next">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                    </svg>
+                </button>
+                <button id="playPauseBtn" class="btn btn-icon btn-large" title="Play/Pause">
+                    <svg id="playIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: block;">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <svg id="pauseIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                    </svg>
+                </button>
+                <button id="prevBtn" class="btn btn-icon" title="Previous">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                    </svg>
+                </button>
+                <button id="repeatBtn" class="btn btn-icon" title="Repeat">
+                    <svg id="repeatOffIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display: block;">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                    </svg>
+                    <svg id="repeatOneIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/>
+                    </svg>
+                    <svg id="repeatAllIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                    </svg>
+                </button>
+            </div>
+
+            </div>
+        </section>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation Bar (Fixed) -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-page="home">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                </svg>
+                <span>خانه</span>
+            </button>
+            <button class="nav-item" data-page="search">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+                <span>جستجو</span>
+            </button>
+            <button class="nav-item" data-page="playlists">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v14.18L14.73 18l-1.46 1.46L17 22.36l3.73-2.9L19.27 18 17 20.18V6z"/>
+                </svg>
+                <span>پلی‌لیست‌ها</span>
+            </button>
+        </nav>
+
+        <!-- Bottom Player Bar (Fixed) -->
+        <div class="bottom-player-bar" id="bottomPlayerBar" style="display: none;">
+            <div class="player-bar-content">
+                <div class="player-bar-track">
+                    <img id="playerBarImage" src="" alt="Track">
+                    <div class="player-bar-info">
+                        <span id="playerBarTitle">-</span>
+                        <span id="playerBarArtist">-</span>
+                    </div>
+                </div>
+                <div class="player-bar-controls">
+                    <button id="playerBarPlayPause" class="btn-icon-small">▶</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>در حال جستجو...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker registration failed'));
+            });
+        }
+    </script>
+</body>
+</html>
+
