@@ -8,10 +8,17 @@ class MusicPlayer {
         this.repeatMode = 0; // 0 = no repeat, 1 = repeat one, 2 = repeat all
         this.shuffledIndices = [];
         this.searchResults = [];
+        this.currentSearchQuery = '';
+        this.currentSearchPage = 1;
+        this.isLoadingMore = false;
+        this.hasMoreResults = true;
         
         this.initializeElements();
         this.attachEventListeners();
         this.loadPlaylist();
+        this.loadCustomPlaylists();
+        this.loadRecentData();
+        this.setupInfiniteScroll();
     }
 
     initializeElements() {
@@ -37,6 +44,17 @@ class MusicPlayer {
         this.playerBarTitle = document.getElementById('playerBarTitle');
         this.playerBarArtist = document.getElementById('playerBarArtist');
         this.playerBarPlayPause = document.getElementById('playerBarPlayPause');
+        this.playerBarPrev = document.getElementById('playerBarPrev');
+        this.playerBarNext = document.getElementById('playerBarNext');
+        this.playerBarRepeat = document.getElementById('playerBarRepeat');
+        this.playerBarShuffle = document.getElementById('playerBarShuffle');
+        this.playerBarPlayIcon = document.getElementById('playerBarPlayIcon');
+        this.playerBarPauseIcon = document.getElementById('playerBarPauseIcon');
+        this.playerBarRepeatOffIcon = document.getElementById('playerBarRepeatOffIcon');
+        this.playerBarRepeatOneIcon = document.getElementById('playerBarRepeatOneIcon');
+        this.playerBarRepeatAllIcon = document.getElementById('playerBarRepeatAllIcon');
+        this.playerBarShuffleOffIcon = document.getElementById('playerBarShuffleOffIcon');
+        this.playerBarShuffleOnIcon = document.getElementById('playerBarShuffleOnIcon');
         
         // Controls
         this.playPauseBtn = document.getElementById('playPauseBtn');
@@ -53,6 +71,7 @@ class MusicPlayer {
         this.searchHistoryList = document.getElementById('searchHistoryList');
         this.searchResultsMain = document.getElementById('searchResultsMain');
         this.resultsContainerMain = document.getElementById('resultsContainerMain');
+        this.searchLoadingIndicator = document.getElementById('searchLoadingIndicator');
         
         // Playlists Page
         this.playlistsListMain = document.getElementById('playlistsListMain');
@@ -133,6 +152,18 @@ class MusicPlayer {
         if (this.playerBarPlayPause) {
             this.playerBarPlayPause.addEventListener('click', () => this.togglePlayPause());
         }
+        if (this.playerBarPrev) {
+            this.playerBarPrev.addEventListener('click', () => this.playPrevious());
+        }
+        if (this.playerBarNext) {
+            this.playerBarNext.addEventListener('click', () => this.playNext());
+        }
+        if (this.playerBarRepeat) {
+            this.playerBarRepeat.addEventListener('click', () => this.toggleRepeat());
+        }
+        if (this.playerBarShuffle) {
+            this.playerBarShuffle.addEventListener('click', () => this.toggleShuffle());
+        }
     }
 
     async search() {
@@ -147,7 +178,8 @@ class MusicPlayer {
 
         try {
             // Use the correct search URL format: https://mytehranmusic.com/?s=query
-            const results = await this.fetchSearchResults(query);
+            const result = await this.fetchSearchResults(query, 1);
+            const results = result.results || [];
             
             this.searchResults = results;
             this.displayResults(results);
@@ -159,9 +191,12 @@ class MusicPlayer {
         }
     }
 
-    async fetchSearchResults(query) {
-        // Use the correct search URL format: https://mytehranmusic.com/?s=query
-        const searchUrl = `https://mytehranmusic.com/?s=${encodeURIComponent(query)}`;
+    async fetchSearchResults(query, page = 1) {
+        // Use the correct search URL format: https://mytehranmusic.com/?s=query&paged=page
+        let searchUrl = `https://mytehranmusic.com/?s=${encodeURIComponent(query)}`;
+        if (page > 1) {
+            searchUrl += `&paged=${page}`;
+        }
         
         // Use CORS proxy to bypass CORS restrictions
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
@@ -175,16 +210,19 @@ class MusicPlayer {
             const data = await response.json();
             const htmlContent = data.contents;
             
-            return this.parseSearchResults(htmlContent, query);
+            return this.parseSearchResults(htmlContent, query, page);
         } catch (error) {
             console.warn('Error fetching search results:', error);
             // Try alternative proxy services
-            return await this.fetchSearchResultsAlternative(query);
+            return await this.fetchSearchResultsAlternative(query, page);
         }
     }
 
-    async fetchSearchResultsAlternative(query) {
-        const searchUrl = `https://mytehranmusic.com/?s=${encodeURIComponent(query)}`;
+    async fetchSearchResultsAlternative(query, page = 1) {
+        let searchUrl = `https://mytehranmusic.com/?s=${encodeURIComponent(query)}`;
+        if (page > 1) {
+            searchUrl += `&paged=${page}`;
+        }
         
         // Try alternative CORS proxy
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`;
@@ -196,14 +234,19 @@ class MusicPlayer {
             }
             
             const htmlContent = await response.text();
-            return this.parseSearchResults(htmlContent, query);
+            return this.parseSearchResults(htmlContent, query, page);
         } catch (error) {
             console.warn('Alternative proxy also failed:', error);
-            return this.fallbackSearchResults(query);
+            const fallback = this.fallbackSearchResults(query);
+            return {
+                results: fallback,
+                hasMore: false,
+                page: page
+            };
         }
     }
 
-    parseSearchResults(html, query) {
+    parseSearchResults(html, query, page = 1) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const results = [];
@@ -211,6 +254,8 @@ class MusicPlayer {
         // Parse based on the actual structure: div.grid-item contains each music track
         // Structure: div.grid-item > div.mcpplay (with data attributes) > div.title > div.artist
         const gridItems = doc.querySelectorAll('div.grid-item');
+        
+        console.log(`Found ${gridItems.length} grid items`);
         
         gridItems.forEach((gridItem, index) => {
             // Find the play button with data attributes
@@ -300,7 +345,7 @@ class MusicPlayer {
             if (title && url) {
                 // Store both direct music URL and page URL
                 const trackData = {
-                    id: Date.now() + index,
+                    id: Date.now() + index + (page - 1) * 10000, // Unique ID per page
                     title: title.trim(),
                     artist: finalArtist.trim() || 'ناشناس',
                     url: url, // Direct music URL from data-music if available, otherwise page URL
@@ -322,7 +367,56 @@ class MusicPlayer {
             }
         });
 
-        return results.length > 0 ? results : this.fallbackSearchResults(query);
+        console.log(`Parsed ${results.length} tracks from page ${page}`);
+
+        // Check for pagination after parsing results
+        let hasMore = false;
+        if (results.length > 0) {
+            hasMore = this.checkForMorePages(doc);
+            console.log(`Has more pages: ${hasMore}`);
+        }
+
+        if (results.length === 0) {
+            const fallback = this.fallbackSearchResults(query);
+            return {
+                results: fallback,
+                hasMore: false,
+                page: page
+            };
+        }
+        
+        return {
+            results: results,
+            hasMore: hasMore,
+            page: page
+        };
+    }
+
+    checkForMorePages(doc) {
+        // Check for pagination links - WordPress typically uses .page-numbers or .pagination
+        const nextLink = doc.querySelector('a.next.page-numbers, .pagination a.next, .wp-pagenavi a.next, a[rel="next"]');
+        if (nextLink) {
+            return true;
+        }
+        
+        // Check if there are multiple pages by looking for page numbers
+        const pageNumbers = doc.querySelectorAll('.page-numbers, .pagination a, .wp-pagenavi a');
+        if (pageNumbers.length > 1) {
+            // Check if current page is not the last
+            let maxPage = 1;
+            pageNumbers.forEach(link => {
+                const text = link.textContent.trim();
+                const pageNum = parseInt(text);
+                if (!isNaN(pageNum) && pageNum > maxPage) {
+                    maxPage = pageNum;
+                }
+            });
+            // If we found page numbers > 1, assume there might be more
+            return maxPage > 1;
+        }
+        
+        // Default: assume there might be more if we got results
+        return true;
     }
 
     fallbackSearchResults(query) {
@@ -382,10 +476,26 @@ class MusicPlayer {
             </div>
             <div class="track-actions">
                 ${source === 'results' ? 
-                    `<button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">📋</button>
-                     <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">▶</button>` :
-                    `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">▶</button>
-                     <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">🗑</button>`
+                    `<button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                        </svg>
+                     </button>
+                     <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                     </button>` :
+                    `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                     </button>
+                     <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                     </button>`
                 }
             </div>
         `;
@@ -522,6 +632,16 @@ class MusicPlayer {
     loadAndPlay(track) {
         this.currentTrackEl.textContent = track.title;
         this.currentArtistEl.textContent = track.artist;
+        
+        // Update bottom player bar
+        if (this.playerBarTitle) this.playerBarTitle.textContent = track.title;
+        if (this.playerBarArtist) this.playerBarArtist.textContent = track.artist;
+        if (this.playerBarImage) {
+            this.playerBarImage.src = track.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E';
+        }
+        if (this.bottomPlayerBar) {
+            this.bottomPlayerBar.style.display = 'flex';
+        }
         
         // Update current track image
         const currentImageEl = document.getElementById('currentTrackImage');
@@ -808,12 +928,26 @@ class MusicPlayer {
     }
 
     updateShuffleButton() {
-        if (this.isShuffle) {
-            this.shuffleBtn.classList.add('active');
-            this.shuffleBtn.title = 'Shuffle: فعال';
-        } else {
-            this.shuffleBtn.classList.remove('active');
-            this.shuffleBtn.title = 'Shuffle: غیرفعال';
+        if (this.shuffleBtn) {
+            if (this.isShuffle) {
+                this.shuffleBtn.classList.add('active');
+                this.shuffleBtn.title = 'Shuffle: فعال';
+            } else {
+                this.shuffleBtn.classList.remove('active');
+                this.shuffleBtn.title = 'Shuffle: غیرفعال';
+            }
+        }
+        // Bottom player bar
+        if (this.playerBarShuffle) {
+            if (this.isShuffle) {
+                this.playerBarShuffle.classList.add('active');
+                if (this.playerBarShuffleOffIcon) this.playerBarShuffleOffIcon.style.display = 'none';
+                if (this.playerBarShuffleOnIcon) this.playerBarShuffleOnIcon.style.display = 'block';
+            } else {
+                this.playerBarShuffle.classList.remove('active');
+                if (this.playerBarShuffleOffIcon) this.playerBarShuffleOffIcon.style.display = 'block';
+                if (this.playerBarShuffleOnIcon) this.playerBarShuffleOnIcon.style.display = 'none';
+            }
         }
     }
 
@@ -825,34 +959,57 @@ class MusicPlayer {
     }
 
     updateRepeatButton() {
-        // Remove all repeat classes
-        this.repeatBtn.classList.remove('repeat-off', 'repeat-one', 'repeat-all', 'active');
-        
-        // Hide all icons first
-        const repeatOffIcon = document.getElementById('repeatOffIcon');
-        const repeatOneIcon = document.getElementById('repeatOneIcon');
-        const repeatAllIcon = document.getElementById('repeatAllIcon');
-        
-        if (repeatOffIcon) repeatOffIcon.style.display = 'none';
-        if (repeatOneIcon) repeatOneIcon.style.display = 'none';
-        if (repeatAllIcon) repeatAllIcon.style.display = 'none';
-        
-        switch (this.repeatMode) {
-            case 0: // No repeat
-                this.repeatBtn.classList.add('repeat-off');
-                if (repeatOffIcon) repeatOffIcon.style.display = 'block';
-                this.repeatBtn.title = 'Repeat: غیرفعال';
-                break;
-            case 1: // Repeat one
-                this.repeatBtn.classList.add('repeat-one', 'active');
-                if (repeatOneIcon) repeatOneIcon.style.display = 'block';
-                this.repeatBtn.title = 'Repeat: تکرار یک موزیک';
-                break;
-            case 2: // Repeat all
-                this.repeatBtn.classList.add('repeat-all', 'active');
-                if (repeatAllIcon) repeatAllIcon.style.display = 'block';
-                this.repeatBtn.title = 'Repeat: تکرار کل پلی‌لیست';
-                break;
+        if (this.repeatBtn) {
+            // Remove all repeat classes
+            this.repeatBtn.classList.remove('repeat-off', 'repeat-one', 'repeat-all', 'active');
+            
+            // Hide all icons first
+            const repeatOffIcon = document.getElementById('repeatOffIcon');
+            const repeatOneIcon = document.getElementById('repeatOneIcon');
+            const repeatAllIcon = document.getElementById('repeatAllIcon');
+            
+            if (repeatOffIcon) repeatOffIcon.style.display = 'none';
+            if (repeatOneIcon) repeatOneIcon.style.display = 'none';
+            if (repeatAllIcon) repeatAllIcon.style.display = 'none';
+            
+            switch (this.repeatMode) {
+                case 0: // No repeat
+                    this.repeatBtn.classList.add('repeat-off');
+                    if (repeatOffIcon) repeatOffIcon.style.display = 'block';
+                    this.repeatBtn.title = 'Repeat: غیرفعال';
+                    break;
+                case 1: // Repeat one
+                    this.repeatBtn.classList.add('repeat-one', 'active');
+                    if (repeatOneIcon) repeatOneIcon.style.display = 'block';
+                    this.repeatBtn.title = 'Repeat: تکرار یک موزیک';
+                    break;
+                case 2: // Repeat all
+                    this.repeatBtn.classList.add('repeat-all', 'active');
+                    if (repeatAllIcon) repeatAllIcon.style.display = 'block';
+                    this.repeatBtn.title = 'Repeat: تکرار کل پلی‌لیست';
+                    break;
+            }
+        }
+        // Bottom player bar
+        if (this.playerBarRepeat) {
+            if (this.playerBarRepeatOffIcon) this.playerBarRepeatOffIcon.style.display = 'none';
+            if (this.playerBarRepeatOneIcon) this.playerBarRepeatOneIcon.style.display = 'none';
+            if (this.playerBarRepeatAllIcon) this.playerBarRepeatAllIcon.style.display = 'none';
+            
+            switch (this.repeatMode) {
+                case 0:
+                    if (this.playerBarRepeatOffIcon) this.playerBarRepeatOffIcon.style.display = 'block';
+                    this.playerBarRepeat.classList.remove('active');
+                    break;
+                case 1:
+                    if (this.playerBarRepeatOneIcon) this.playerBarRepeatOneIcon.style.display = 'block';
+                    this.playerBarRepeat.classList.add('active');
+                    break;
+                case 2:
+                    if (this.playerBarRepeatAllIcon) this.playerBarRepeatAllIcon.style.display = 'block';
+                    this.playerBarRepeat.classList.add('active');
+                    break;
+            }
         }
     }
 
@@ -872,11 +1029,15 @@ class MusicPlayer {
         if (this.audioPlayer.paused) {
             if (playIcon) playIcon.style.display = 'block';
             if (pauseIcon) pauseIcon.style.display = 'none';
-            if (this.playerBarPlayPause) this.playerBarPlayPause.textContent = '▶';
+            // Bottom player bar
+            if (this.playerBarPlayIcon) this.playerBarPlayIcon.style.display = 'block';
+            if (this.playerBarPauseIcon) this.playerBarPauseIcon.style.display = 'none';
         } else {
             if (playIcon) playIcon.style.display = 'none';
             if (pauseIcon) pauseIcon.style.display = 'block';
-            if (this.playerBarPlayPause) this.playerBarPlayPause.textContent = '⏸';
+            // Bottom player bar
+            if (this.playerBarPlayIcon) this.playerBarPlayIcon.style.display = 'none';
+            if (this.playerBarPauseIcon) this.playerBarPauseIcon.style.display = 'block';
         }
     }
 
@@ -967,7 +1128,7 @@ class MusicPlayer {
             this.nextPlaylistId = parseInt(savedNextId);
         }
         
-        this.displayCustomPlaylists();
+        this.displayCustomPlaylistsMain();
     }
 
     createNewPlaylist() {
@@ -984,10 +1145,21 @@ class MusicPlayer {
         };
         
         this.saveCustomPlaylists();
-        this.displayCustomPlaylists();
+        this.displayCustomPlaylistsMain();
     }
 
     displayCustomPlaylists() {
+        // This function is for old layout, use displayCustomPlaylistsMain instead
+        if (this.playlistsListMain) {
+            this.displayCustomPlaylistsMain();
+            return;
+        }
+        
+        // Fallback for old layout if playlistsList exists
+        if (!this.playlistsList) {
+            return;
+        }
+        
         this.playlistsList.innerHTML = '';
         
         const playlists = Object.entries(this.customPlaylists);
@@ -1046,8 +1218,7 @@ class MusicPlayer {
         this.playlist = [...playlist.tracks];
         this.currentIndex = -1;
         this.updatePlaylistDisplay();
-        this.displayCustomPlaylists();
-        this.displayCustomPlaylistsMain();
+            this.displayCustomPlaylistsMain();
         this.savePlaylist();
         
         // Add to recent playlists
@@ -1102,7 +1273,7 @@ class MusicPlayer {
             
             playlist.downloaded = true;
             this.saveCustomPlaylists();
-            this.displayCustomPlaylists();
+            this.displayCustomPlaylistsMain();
             
             this.showLoading(false);
             this.hideError();
@@ -1159,7 +1330,7 @@ class MusicPlayer {
                 const trackIndex = parseInt(btn.dataset.trackIndex);
                 this.removeTrackFromPlaylist(playlistId, trackIndex);
                 document.body.removeChild(editor);
-                this.displayCustomPlaylists();
+                this.displayCustomPlaylistsMain();
             });
         });
     }
@@ -1173,7 +1344,7 @@ class MusicPlayer {
                 this.currentIndex = -1;
             }
             this.saveCustomPlaylists();
-            this.displayCustomPlaylists();
+            this.displayCustomPlaylistsMain();
             this.updatePlaylistDisplay();
         }
     }
@@ -1393,23 +1564,61 @@ class MusicPlayer {
             this.navigateToPage('search');
         }
         
-        this.showLoading(true);
+        // Show search loading indicator at the top
+        if (this.searchLoadingIndicator) {
+            this.searchLoadingIndicator.style.display = 'flex';
+        }
         this.hideError();
 
-        this.fetchSearchResults(query).then(results => {
-            console.log('Search results received:', results);
-            this.searchResults = results || [];
-            this.displaySearchResultsMain(this.searchResults);
-            this.showLoading(false);
+        // Reset pagination for new search
+        this.currentSearchQuery = query;
+        this.currentSearchPage = 1;
+        this.hasMoreResults = true;
+        this.isLoadingMore = false;
+
+        this.fetchSearchResults(query, 1).then(result => {
+            console.log('Search results received:', result);
+            console.log('Result type:', typeof result, 'Is array:', Array.isArray(result));
+            
+            // Handle both old format (array) and new format (object)
+            let results = [];
+            let hasMore = false;
+            
+            if (Array.isArray(result)) {
+                // Old format - direct array (fallback)
+                console.log('Received array format, converting...');
+                results = result;
+                hasMore = true; // Assume there might be more
+            } else if (result && typeof result === 'object' && result.results) {
+                // New format - object with results and hasMore
+                results = result.results || [];
+                hasMore = result.hasMore !== undefined ? result.hasMore : true;
+            } else {
+                console.error('Unexpected result format:', result);
+                results = [];
+                hasMore = false;
+            }
+            
+            console.log(`Extracted ${results.length} results, hasMore: ${hasMore}`);
+            console.log('First result:', results[0]);
+            
+            this.searchResults = results;
+            this.hasMoreResults = hasMore;
+            this.displaySearchResultsMain(this.searchResults, true);
+            if (this.searchLoadingIndicator) {
+                this.searchLoadingIndicator.style.display = 'none';
+            }
         }).catch(error => {
             console.error('Search error:', error);
             this.showError('خطا در جستجو. لطفا دوباره تلاش کنید.');
-            this.showLoading(false);
+            if (this.searchLoadingIndicator) {
+                this.searchLoadingIndicator.style.display = 'none';
+            }
         });
     }
 
-    displaySearchResultsMain(results) {
-        console.log('displaySearchResultsMain called with:', results);
+    displaySearchResultsMain(results, clear = false) {
+        console.log('displaySearchResultsMain called with:', results, 'clear:', clear);
         
         if (!this.resultsContainerMain) {
             console.error('resultsContainerMain not found');
@@ -1421,44 +1630,48 @@ class MusicPlayer {
             return;
         }
         
-        console.log('Containers found, clearing and displaying...');
-        
-        this.resultsContainerMain.innerHTML = '';
         this.searchResultsMain.style.display = 'block';
         this.searchResultsMain.style.visibility = 'visible';
 
+        if (clear) {
+            this.resultsContainerMain.innerHTML = '';
+        }
+
         if (!results || results.length === 0) {
-            console.log('No results to display');
-            this.resultsContainerMain.innerHTML = '<p class="empty-state">نتیجه‌ای یافت نشد</p>';
+            if (clear) {
+                this.resultsContainerMain.innerHTML = '<p class="empty-state">نتیجه‌ای یافت نشد</p>';
+            }
             return;
         }
 
-        console.log(`Displaying ${results.length} results`);
-        console.log('First result sample:', results[0]);
+        console.log(`Displaying ${results.length} results (clear=${clear})`);
+        console.log('Sample result:', results[0]);
         
-        // Limit to first 50 results for performance
-        const resultsToShow = results.slice(0, 50);
+        // Add test div only on first load
+        if (clear) {
+            // Remove old test div if exists
+            const oldTestDiv = this.resultsContainerMain.querySelector('div[style*="background"]');
+            if (oldTestDiv) {
+                oldTestDiv.remove();
+            }
+            
+            const testDiv = document.createElement('div');
+            testDiv.style.padding = '20px';
+            testDiv.style.background = 'var(--bg-card)';
+            testDiv.style.borderRadius = '8px';
+            testDiv.style.marginBottom = '16px';
+            testDiv.innerHTML = `<strong style="color: var(--spotify-green);">${results.length} نتیجه یافت شد</strong>`;
+            this.resultsContainerMain.appendChild(testDiv);
+        }
         
-        // Clear container first
-        this.resultsContainerMain.innerHTML = '';
-        
-        // Create a simple test div first to verify display works
-        const testDiv = document.createElement('div');
-        testDiv.style.padding = '20px';
-        testDiv.style.background = 'var(--bg-card)';
-        testDiv.style.borderRadius = '8px';
-        testDiv.style.marginBottom = '16px';
-        testDiv.innerHTML = `<strong style="color: var(--spotify-green);">${results.length} نتیجه یافت شد</strong>`;
-        this.resultsContainerMain.appendChild(testDiv);
-        
-        resultsToShow.forEach((track, index) => {
+        results.forEach((track, index) => {
             try {
                 if (!track || !track.id) {
                     console.warn('Invalid track at index', index, ':', track);
                     return;
                 }
                 
-                console.log(`Creating track element ${index + 1}/${resultsToShow.length}:`, track.title);
+                console.log(`Creating track element ${index + 1}/${results.length}:`, track.title);
                 
                 const trackElement = this.createTrackElement(track, 'results');
                 if (trackElement) {
@@ -1488,12 +1701,31 @@ class MusicPlayer {
         console.log('resultsContainerMain:', this.resultsContainerMain);
         console.log('resultsContainerMain.innerHTML length:', this.resultsContainerMain.innerHTML.length);
         
-        // Scroll to results after a short delay to ensure rendering
-        setTimeout(() => {
-            if (this.resultsContainerMain.children.length > 0) {
-                this.searchResultsMain.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Scroll to results after a short delay to ensure rendering (only on first load)
+        if (clear) {
+            setTimeout(() => {
+                if (this.resultsContainerMain.children.length > 0) {
+                    this.searchResultsMain.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+        }
+        
+        // Show/hide infinite scroll loader
+        const loader = document.getElementById('infiniteScrollLoader');
+        if (loader) {
+            // Show loader if there are more results
+            if (this.hasMoreResults) {
+                loader.style.display = 'flex';
+            } else {
+                loader.style.display = 'none';
             }
-        }, 100);
+        }
+        
+        // Re-setup observer after displaying results
+        // Always setup observer, not just on clear, to handle append cases
+        setTimeout(() => {
+            this.setupInfiniteScroll();
+        }, clear ? 500 : 100);
     }
 
     addToSearchHistory(query) {
@@ -1547,6 +1779,11 @@ class MusicPlayer {
     }
 
     displayCustomPlaylistsMain() {
+        if (!this.playlistsListMain) {
+            console.error('playlistsListMain not found');
+            return;
+        }
+        
         this.playlistsListMain.innerHTML = '';
         
         const playlists = Object.entries(this.customPlaylists);
@@ -1566,23 +1803,62 @@ class MusicPlayer {
                     ${playlist.downloaded ? '<span class="downloaded-badge">✓ دانلود شده</span>' : ''}
                 </div>
                 <div class="playlist-actions-main">
-                    <button class="btn btn-small btn-play-playlist-main" data-playlist-id="${id}" title="پخش">▶</button>
-                    <button class="btn btn-small btn-download-playlist-main" data-playlist-id="${id}" title="دانلود">⬇</button>
-                    <button class="btn btn-small btn-delete-playlist-main" data-playlist-id="${id}" title="حذف">🗑</button>
+                    <button class="btn btn-small btn-play-playlist-main" data-playlist-id="${id}" title="پخش">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    </button>
+                    <button class="btn btn-small btn-download-playlist-main" data-playlist-id="${id}" title="دانلود">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                        </svg>
+                    </button>
+                    <button class="btn btn-small btn-edit-playlist-main" data-playlist-id="${id}" title="ویرایش">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                        </svg>
+                    </button>
+                    <button class="btn btn-small btn-delete-playlist-main" data-playlist-id="${id}" title="حذف">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                    </button>
                 </div>
             `;
             
-            playlistEl.querySelector('.btn-play-playlist-main').addEventListener('click', () => {
-                this.selectCustomPlaylist(id);
-            });
+            // Attach event listeners with error handling
+            const playBtn = playlistEl.querySelector('.btn-play-playlist-main');
+            const downloadBtn = playlistEl.querySelector('.btn-download-playlist-main');
+            const editBtn = playlistEl.querySelector('.btn-edit-playlist-main');
+            const deleteBtn = playlistEl.querySelector('.btn-delete-playlist-main');
             
-            playlistEl.querySelector('.btn-download-playlist-main').addEventListener('click', () => {
-                this.downloadPlaylist(id);
-            });
+            if (playBtn) {
+                playBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.selectCustomPlaylist(id);
+                });
+            }
             
-            playlistEl.querySelector('.btn-delete-playlist-main').addEventListener('click', () => {
-                this.deletePlaylist(id);
-            });
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.downloadPlaylist(id);
+                });
+            }
+            
+            if (editBtn) {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.editPlaylist(id);
+                });
+            }
+            
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deletePlaylist(id);
+                });
+            }
             
             this.playlistsListMain.appendChild(playlistEl);
         });
@@ -1651,6 +1927,99 @@ class MusicPlayer {
         
         if (this.currentPage === 'home') {
             this.displayRecentPlaylists();
+        }
+    }
+
+    setupInfiniteScroll() {
+        const loader = document.getElementById('infiniteScrollLoader');
+        if (!loader) {
+            console.warn('infiniteScrollLoader not found');
+            return;
+        }
+
+        // Disconnect existing observer if any
+        if (this.scrollObserver) {
+            this.scrollObserver.disconnect();
+        }
+
+        this.scrollObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                console.log('Loader intersection:', entry.isIntersecting, 'hasMore:', this.hasMoreResults, 'isLoading:', this.isLoadingMore, 'page:', this.currentPage);
+                if (entry.isIntersecting && 
+                    this.hasMoreResults && 
+                    !this.isLoadingMore && 
+                    this.currentSearchQuery &&
+                    this.currentPage === 'search') {
+                    console.log('Loading more results...');
+                    this.loadMoreResults();
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '200px', // Start loading earlier
+            threshold: 0.1
+        });
+
+        this.scrollObserver.observe(loader);
+        console.log('Infinite scroll observer setup complete');
+    }
+
+    async loadMoreResults() {
+        if (this.isLoadingMore || !this.hasMoreResults || !this.currentSearchQuery) {
+            console.log('Cannot load more:', {
+                isLoading: this.isLoadingMore,
+                hasMore: this.hasMoreResults,
+                query: this.currentSearchQuery
+            });
+            return;
+        }
+
+        console.log('Loading more results for page:', this.currentSearchPage + 1);
+        this.isLoadingMore = true;
+        const loader = document.getElementById('infiniteScrollLoader');
+        if (loader) {
+            loader.style.display = 'flex';
+        }
+
+        try {
+            const nextPage = this.currentSearchPage + 1;
+            console.log(`Fetching page ${nextPage} for query: ${this.currentSearchQuery}`);
+            const result = await this.fetchSearchResults(this.currentSearchQuery, nextPage);
+            
+            // Handle both formats
+            let newResults = [];
+            let hasMore = false;
+            
+            if (Array.isArray(result)) {
+                newResults = result;
+                hasMore = true;
+            } else if (result && result.results) {
+                newResults = result.results || [];
+                hasMore = result.hasMore !== undefined ? result.hasMore : true;
+            }
+            
+            console.log(`Received ${newResults.length} new results, hasMore: ${hasMore}`);
+            
+            if (newResults.length > 0) {
+                // Append new results
+                this.searchResults = [...this.searchResults, ...newResults];
+                this.currentSearchPage = nextPage;
+                this.hasMoreResults = hasMore;
+                
+                // Display new results (append mode)
+                this.displaySearchResultsMain(newResults, false);
+            } else {
+                console.log('No more results, stopping infinite scroll');
+                this.hasMoreResults = false;
+            }
+        } catch (error) {
+            console.error('Error loading more results:', error);
+            this.hasMoreResults = false;
+        } finally {
+            this.isLoadingMore = false;
+            if (loader) {
+                loader.style.display = this.hasMoreResults ? 'flex' : 'none';
+            }
         }
     }
 }
