@@ -143,6 +143,28 @@
                                 <h3 id="currentTrack">-</h3>
                                 <p id="currentArtist">-</p>
                             </div>
+                            <button id="lyricsBtn" class="btn btn-icon lyrics-btn" title="متن آهنگ" style="display: none;">
+                                <!-- Lyrics Icon (default - shown when lyrics found) -->
+                                <svg id="lyricsIcon" class="lyrics-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                                </svg>
+                                <!-- Loading Icon (shown while extracting) -->
+                                <svg id="lyricsLoadingIcon" class="lyrics-loading-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" opacity="0.3"/>
+                                    <path d="M12 4v4c0 2.21 1.79 4 4 4h4c0-4.42-3.58-8-8-8z">
+                                        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+                                    </path>
+                                </svg>
+                                <!-- Not Found Icon (shown when lyrics not found) -->
+                                <svg id="lyricsNotFoundIcon" class="lyrics-not-found-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                                    <path d="M12 10.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5.67-1.5 1.5-1.5zM12 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" fill="#e22134"/>
+                                </svg>
+                                <!-- Retry Icon (shown when error occurred) -->
+                                <svg id="lyricsRetryIcon" class="lyrics-retry-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                    <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                                </svg>
+                            </button>
                         </div>
                         <div class="audio-player-wrapper">
                             <audio id="audioPlayer" class="audioPlayer" controls></audio>
@@ -185,6 +207,39 @@
                             </button>
                         </div>
                     </section>
+                </div>
+
+                <!-- Lyrics Page -->
+                <div id="lyricsPage" class="page" style="display: none;">
+                    <div class="page-header">
+                        <button id="backFromLyricsBtn" class="btn btn-icon" title="بازگشت">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                            </svg>
+                        </button>
+                        <h1 id="lyricsTitle">متن آهنگ</h1>
+                        <button id="refreshLyricsBtn" class="btn btn-icon" title="بارگذاری مجدد متن آهنگ">
+                            <!-- Refresh Icon (default) -->
+                            <svg id="refreshLyricsIcon" class="refresh-lyrics-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: block;">
+                                <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                            </svg>
+                            <!-- Loading Icon (shown while refreshing) -->
+                            <svg id="refreshLyricsLoadingIcon" class="refresh-lyrics-loading-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" opacity="0.3"/>
+                                <path d="M12 4v4c0 2.21 1.79 4 4 4h4c0-4.42-3.58-8-8-8z">
+                                    <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+                                </path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="lyrics-content">
+                        <div id="lyricsText" class="lyrics-text">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <p>در حال بارگذاری متن آهنگ...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

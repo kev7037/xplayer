@@ -1270,6 +1270,7 @@ header h1 {
     margin-bottom: 24px;
     padding-bottom: 24px;
     border-bottom: 1px solid var(--border-color);
+    position: relative;
 }
 
 .current-track-image {
@@ -2260,6 +2261,150 @@ header h1 {
     .toast {
         min-width: auto;
         width: 100%;
+    }
+}
+
+/* Lyrics Button */
+.lyrics-btn {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 12px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lyrics-btn:hover {
+    background: var(--bg-hover);
+    transform: scale(1.1);
+    border-color: var(--spotify-green);
+}
+
+.lyrics-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+/* Lyrics Loading Icon Animation */
+.lyrics-loading-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Lyrics Not Found Icon */
+.lyrics-not-found-icon {
+    opacity: 0.6;
+}
+
+/* Lyrics Retry Icon */
+.lyrics-retry-icon {
+    color: var(--spotify-green);
+}
+
+/* Refresh Lyrics Button Loading */
+.refresh-lyrics-loading-icon {
+    animation: spin 1s linear infinite;
+}
+
+.refresh-lyrics-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Lyrics Page */
+.lyrics-content {
+    padding: 24px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.lyrics-text {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 40px 32px;
+    line-height: 2.2;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+    text-align: center;
+    word-wrap: break-word;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+    direction: rtl;
+    font-family: 'Circular', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.lyrics-text p {
+    margin-bottom: 20px;
+    line-height: 2.2;
+}
+
+.lyrics-text br {
+    line-height: 2.2;
+    display: block;
+    content: "";
+    margin: 8px 0;
+}
+
+/* Remove extra spacing from empty lines */
+.lyrics-text br + br {
+    margin: 4px 0;
+}
+
+/* Style for better readability */
+.lyrics-text {
+    letter-spacing: 0.3px;
+}
+
+/* Responsive Lyrics */
+@media (max-width: 768px) {
+    .lyrics-content {
+        padding: 16px;
+    }
+    
+    .lyrics-text {
+        padding: 32px 24px;
+        font-size: 1.05rem;
+        line-height: 2;
+    }
+    
+    .lyrics-btn {
+        position: static;
+        margin-top: 16px;
+    }
+    
+    .now-playing {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 480px) {
+    .lyrics-content {
+        padding: 12px;
+    }
+    
+    .lyrics-text {
+        padding: 24px 16px;
+        font-size: 1rem;
+        line-height: 1.8;
+    }
+    
+    .lyrics-text br {
+        margin: 6px 0;
     }
 }
 

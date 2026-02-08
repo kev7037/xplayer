@@ -54,7 +54,8 @@ class MusicPlayer {
             home: document.getElementById('homePage'),
             search: document.getElementById('searchPage'),
             playlists: document.getElementById('playlistsPage'),
-            player: document.getElementById('playerPage')
+            player: document.getElementById('playerPage'),
+            lyrics: document.getElementById('lyricsPage')
         };
         
         // Search
@@ -116,6 +117,28 @@ class MusicPlayer {
         this.playlistDetailPage = document.getElementById('playlistDetailPage');
         this.playlistTracksContainer = document.getElementById('playlistTracksContainer');
         this.backToPlaylistsBtn = document.getElementById('backToPlaylistsBtn');
+        
+        // Lyrics
+        this.lyricsBtn = document.getElementById('lyricsBtn');
+        this.lyricsPage = document.getElementById('lyricsPage');
+        this.lyricsTitle = document.getElementById('lyricsTitle');
+        this.lyricsText = document.getElementById('lyricsText');
+        this.backFromLyricsBtn = document.getElementById('backFromLyricsBtn');
+        this.lyricsIcon = document.getElementById('lyricsIcon');
+        this.lyricsLoadingIcon = document.getElementById('lyricsLoadingIcon');
+        this.lyricsNotFoundIcon = document.getElementById('lyricsNotFoundIcon');
+        this.lyricsRetryIcon = document.getElementById('lyricsRetryIcon');
+        this.refreshLyricsBtn = document.getElementById('refreshLyricsBtn');
+        this.refreshLyricsIcon = document.getElementById('refreshLyricsIcon');
+        this.refreshLyricsLoadingIcon = document.getElementById('refreshLyricsLoadingIcon');
+        this.refreshLyricsIcon = document.getElementById('refreshLyricsIcon');
+        this.refreshLyricsLoadingIcon = document.getElementById('refreshLyricsLoadingIcon');
+        this.currentTrackLyrics = null; // Store current track lyrics
+        this.currentTrackPageUrl = null; // Store current track pageUrl for retry
+        this.currentTrackId = null; // Store current track ID to prevent showing wrong lyrics
+        this.lyricsState = 'none'; // 'none', 'loading', 'found', 'notfound', 'error'
+        this.lyricsCache = {}; // Cache for lyrics (key: pageUrl, value: lyrics data)
+        this.loadLyricsCache(); // Load cached lyrics on startup
         
         // UI
         this.loadingIndicator = document.getElementById('loadingIndicator');
@@ -225,6 +248,55 @@ class MusicPlayer {
                     this.navigateToPage(previousPage);
                 } else {
                     this.navigateToPage('home');
+                }
+            });
+        }
+        
+        // Lyrics button
+        if (this.lyricsBtn) {
+            this.lyricsBtn.addEventListener('click', () => {
+                console.log('Lyrics button clicked, state:', this.lyricsState, 'hasLyrics:', !!this.currentTrackLyrics, 'currentIndex:', this.currentIndex);
+                
+                // Always show lyrics page, regardless of state
+                // The page will show appropriate message if lyrics not found
+                this.showLyrics();
+            });
+        }
+        
+        // Back from lyrics page button
+        if (this.backFromLyricsBtn) {
+            this.backFromLyricsBtn.addEventListener('click', () => {
+                this.navigateToPage('player');
+            });
+        }
+        
+        // Refresh lyrics button
+        if (this.refreshLyricsBtn) {
+            this.refreshLyricsBtn.addEventListener('click', () => {
+                if (this.currentTrackPageUrl) {
+                    const track = this.playlist[this.currentIndex];
+                    if (track) {
+                        // Show loading state
+                        this.setRefreshLyricsLoading(true);
+                        
+                        // Force refresh by clearing cache for this URL
+                        delete this.lyricsCache[this.currentTrackPageUrl];
+                        this.saveLyricsCache();
+                        
+                        // Extract lyrics again
+                        this.extractLyrics(this.currentTrackPageUrl, track, true).then(() => {
+                            // Hide loading state
+                            this.setRefreshLyricsLoading(false);
+                            
+                            // Update lyrics display if we're on lyrics page
+                            if (this.currentTrackLyrics && this.lyricsText) {
+                                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
+                            }
+                        }).catch(() => {
+                            // Hide loading state on error
+                            this.setRefreshLyricsLoading(false);
+                        });
+                    }
                 }
             });
         }
@@ -1039,6 +1111,15 @@ class MusicPlayer {
                 }
             });
             track = this.searchResults.find(t => t.id === trackId);
+            // Make sure track from searchResults has all properties (especially pageUrl)
+            if (track) {
+                // Find the same track in playlist to ensure consistency
+                const playlistTrack = this.playlist.find(t => t.id === trackId);
+                if (playlistTrack) {
+                    // Use playlist track to ensure pageUrl is preserved
+                    track = playlistTrack;
+                }
+            }
         } else {
             // Playing from current playlist
             track = this.playlist.find(t => t.id === trackId);
@@ -1047,7 +1128,13 @@ class MusicPlayer {
         if (!track) return;
 
         this.currentIndex = this.playlist.findIndex(t => t.id === trackId);
+        console.log('Playing track:', track.title, 'pageUrl:', track.pageUrl, 'trackId:', track.id);
         this.loadAndPlay(track);
+        
+        // If we're on lyrics page, update lyrics display
+        if (this.currentPage === 'lyrics') {
+            this.updateLyricsDisplay();
+        }
         this.updatePlaylistDisplay();
         this.savePlaylist();
     }
@@ -1069,11 +1156,45 @@ class MusicPlayer {
         // Track when this track started playing (for previous button logic)
         this.trackStartTime = Date.now();
         
-        // Track when this track started playing (for previous button logic)
-        this.trackStartTime = Date.now();
-        
         // Update Media Session metadata for Bluetooth controls
         this.updateMediaSessionMetadata(track);
+        
+        // Extract lyrics if pageUrl is available
+        // Clear previous lyrics immediately when track changes
+        this.currentTrackLyrics = null;
+        this.currentTrackPageUrl = track.pageUrl || null;
+        this.currentTrackId = null; // Reset track ID
+        this.setLyricsState('none'); // Reset state immediately
+        
+        // If we're on lyrics page, show loading state
+        if (this.currentPage === 'lyrics' && this.lyricsText) {
+            this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+        }
+        
+        if (track.pageUrl) {
+            // Extract lyrics for new track
+            console.log('Extracting lyrics for track:', track.title, 'pageUrl:', track.pageUrl);
+            this.extractLyrics(track.pageUrl, track).then(() => {
+                // If we're on lyrics page, update display when lyrics are ready
+                if (this.currentPage === 'lyrics') {
+                    this.updateLyricsDisplay();
+                }
+            }).catch((error) => {
+                console.warn('Error extracting lyrics:', error);
+                // If we're on lyrics page, show error
+                if (this.currentPage === 'lyrics' && this.lyricsText) {
+                    this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
+                }
+            });
+        } else {
+            // Hide lyrics button if no pageUrl
+            console.log('No pageUrl for track:', track.title);
+            this.setLyricsState('none');
+            // If we're on lyrics page, show error
+            if (this.currentPage === 'lyrics' && this.lyricsText) {
+                this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
+            }
+        }
         
         // Reset progress bar
         if (this.playerBarProgressFill) {
@@ -1324,6 +1445,363 @@ class MusicPlayer {
         } catch (error) {
             console.error('Error extracting audio URL:', error);
             return null;
+        }
+    }
+
+    // Check if contentp div contains valid lyrics
+    isValidLyrics(contentpDiv) {
+        if (!contentpDiv) return false;
+        
+        // Check if it has exactly one div inside
+        const innerDivs = contentpDiv.querySelectorAll(':scope > div');
+        if (innerDivs.length !== 1) {
+            return false;
+        }
+        
+        // Check if it has br tags (lyrics usually have line breaks)
+        const brTags = contentpDiv.querySelectorAll('br');
+        if (brTags.length === 0) {
+            return false;
+        }
+        
+        // Check if it has some text content
+        const textContent = contentpDiv.textContent || contentpDiv.innerText;
+        if (!textContent || textContent.trim().length < 10) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    // Set lyrics button state and show appropriate icon
+    setLyricsState(state) {
+        this.lyricsState = state;
+        
+        // Hide all icons first
+        if (this.lyricsIcon) this.lyricsIcon.style.display = 'none';
+        if (this.lyricsLoadingIcon) this.lyricsLoadingIcon.style.display = 'none';
+        if (this.lyricsNotFoundIcon) this.lyricsNotFoundIcon.style.display = 'none';
+        if (this.lyricsRetryIcon) this.lyricsRetryIcon.style.display = 'none';
+        
+        // Show button based on state
+        if (this.lyricsBtn) {
+            if (state === 'none') {
+                this.lyricsBtn.style.display = 'none';
+            } else {
+                this.lyricsBtn.style.display = 'flex';
+                
+                // Show appropriate icon
+                if (state === 'loading' && this.lyricsLoadingIcon) {
+                    this.lyricsLoadingIcon.style.display = 'block';
+                    this.lyricsBtn.title = 'در حال بارگذاری متن آهنگ...';
+                } else if (state === 'found' && this.lyricsIcon) {
+                    this.lyricsIcon.style.display = 'block';
+                    this.lyricsBtn.title = 'متن آهنگ';
+                } else if (state === 'notfound' && this.lyricsNotFoundIcon) {
+                    this.lyricsNotFoundIcon.style.display = 'block';
+                    this.lyricsBtn.title = 'متن آهنگ یافت نشد';
+                } else if (state === 'error' && this.lyricsRetryIcon) {
+                    this.lyricsRetryIcon.style.display = 'block';
+                    this.lyricsBtn.title = 'خطا در بارگذاری متن آهنگ - برای تلاش مجدد کلیک کنید';
+                }
+            }
+        }
+        
+        // Update refresh button visibility
+        this.updateRefreshLyricsButton();
+    }
+    
+    // Update refresh button visibility based on current state
+    updateRefreshLyricsButton() {
+        if (!this.refreshLyricsBtn) return;
+        
+        const currentTrack = this.playlist[this.currentIndex];
+        // Show refresh button if pageUrl exists (allows retry even if not found)
+        if (currentTrack && currentTrack.pageUrl) {
+            this.refreshLyricsBtn.style.display = 'flex';
+        } else {
+            this.refreshLyricsBtn.style.display = 'none';
+        }
+    }
+
+    // Load lyrics cache from localStorage
+    loadLyricsCache() {
+        try {
+            const cached = localStorage.getItem('mytehranLyricsCache');
+            if (cached) {
+                this.lyricsCache = JSON.parse(cached);
+                console.log('Lyrics cache loaded:', Object.keys(this.lyricsCache).length, 'entries');
+            }
+        } catch (error) {
+            console.warn('Failed to load lyrics cache:', error);
+            this.lyricsCache = {};
+        }
+    }
+
+    // Save lyrics cache to localStorage
+    saveLyricsCache() {
+        try {
+            localStorage.setItem('mytehranLyricsCache', JSON.stringify(this.lyricsCache));
+        } catch (error) {
+            console.warn('Failed to save lyrics cache:', error);
+        }
+    }
+
+    // Set refresh lyrics button loading state
+    setRefreshLyricsLoading(isLoading) {
+        if (this.refreshLyricsIcon && this.refreshLyricsLoadingIcon) {
+            if (isLoading) {
+                this.refreshLyricsIcon.style.display = 'none';
+                this.refreshLyricsLoadingIcon.style.display = 'block';
+                if (this.refreshLyricsBtn) {
+                    this.refreshLyricsBtn.disabled = true;
+                    this.refreshLyricsBtn.title = 'در حال بارگذاری متن آهنگ...';
+                }
+            } else {
+                this.refreshLyricsIcon.style.display = 'block';
+                this.refreshLyricsLoadingIcon.style.display = 'none';
+                if (this.refreshLyricsBtn) {
+                    this.refreshLyricsBtn.disabled = false;
+                    this.refreshLyricsBtn.title = 'بارگذاری مجدد متن آهنگ';
+                }
+            }
+        }
+    }
+
+    // Extract lyrics from page
+    async extractLyrics(pageUrl, track, forceRefresh = false) {
+        if (!pageUrl) {
+            this.setLyricsState('none');
+            return;
+        }
+        
+        // Store current track ID to verify lyrics belong to this track
+        const trackId = track.id || track.url || pageUrl;
+        const previousTrackId = this.currentTrackId; // Store previous track ID
+        this.currentTrackId = trackId; // Set new track ID
+        this.currentTrackPageUrl = pageUrl;
+        
+        // Check cache first (unless force refresh)
+        if (!forceRefresh && this.lyricsCache[pageUrl]) {
+            const cachedLyrics = this.lyricsCache[pageUrl];
+            
+            // Verify this is still the current track before using cached lyrics
+            if (this.currentTrackId === trackId) {
+                // Use cached lyrics immediately (cache is per URL, so it's safe)
+                this.currentTrackLyrics = {
+                    html: cachedLyrics.html,
+                    text: cachedLyrics.text
+                };
+                this.setLyricsState('found');
+                console.log('✅ Lyrics loaded from cache for:', track.title);
+                return;
+            } else {
+                console.log('Track changed, ignoring cached lyrics');
+            }
+        }
+        
+        // Set loading state
+        this.setLyricsState('loading');
+        
+        try {
+            // Try primary CORS proxy
+            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+            let response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+                // Try alternative proxy
+                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
+                response = await fetch(proxyUrl);
+            }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            let html;
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const data = await response.json();
+                html = data.contents;
+            } else {
+                html = await response.text();
+            }
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Find contentp div
+            const contentpDiv = doc.querySelector('div.contentp');
+            
+            if (contentpDiv && this.isValidLyrics(contentpDiv)) {
+                // Clone the div to avoid modifying original
+                const clonedDiv = contentpDiv.cloneNode(true);
+                
+                // Remove the first div (song title) - it's not part of lyrics
+                const firstDiv = clonedDiv.querySelector(':scope > div');
+                if (firstDiv) {
+                    firstDiv.remove();
+                }
+                
+                // Extract lyrics text (without the first div)
+                // Clean up HTML: remove extra br tags and normalize spacing
+                let lyricsHtml = clonedDiv.innerHTML;
+                
+                // Remove multiple consecutive br tags (more than 2)
+                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+                
+                // Remove br tags at the beginning and end
+                lyricsHtml = lyricsHtml.replace(/^(<br\s*\/?>)+/gi, '');
+                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>)+$/gi, '');
+                
+                // Replace single br with line break for better formatting
+                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>)/gi, '<br>');
+                
+                // Clean up extra whitespace
+                lyricsHtml = lyricsHtml.trim();
+                
+                // Verify this is still the current track before setting lyrics
+                if (this.currentTrackId !== trackId) {
+                    console.log('Track changed during extraction, ignoring lyrics');
+                    return;
+                }
+                
+                const lyricsData = {
+                    html: lyricsHtml,
+                    text: clonedDiv.textContent || clonedDiv.innerText
+                };
+                
+                // Save to cache
+                this.lyricsCache[pageUrl] = lyricsData;
+                this.saveLyricsCache();
+                
+                // Only set lyrics if this is still the current track
+                if (this.currentTrackId === trackId) {
+                    this.currentTrackLyrics = lyricsData;
+                    // Set found state
+                    this.setLyricsState('found');
+                    console.log('✅ Lyrics extracted and cached successfully for:', track.title);
+                } else {
+                    console.log('Track changed after extraction, ignoring lyrics');
+                }
+            } else {
+                // No valid lyrics found - only set state if still current track
+                if (this.currentTrackId === trackId) {
+                    this.currentTrackLyrics = null;
+                    this.setLyricsState('notfound');
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to extract lyrics:', error);
+            // Only set error state if still current track
+            if (this.currentTrackId === trackId) {
+                this.currentTrackLyrics = null;
+                this.setLyricsState('error');
+            }
+        }
+    }
+
+    // Show lyrics page
+    showLyrics() {
+        // Get current track
+        const currentTrack = this.playlist[this.currentIndex];
+        if (!currentTrack) {
+            this.showError('آهنگ یافت نشد');
+            return;
+        }
+        
+        // Update lyrics title
+        if (this.lyricsTitle) {
+            this.lyricsTitle.textContent = `${currentTrack.title} - ${currentTrack.artist}`;
+        }
+        
+        // Use pageUrl for comparison (more reliable than id)
+        const currentPageUrl = currentTrack.pageUrl || null;
+        const currentTrackId = currentTrack.id || currentTrack.url || currentTrack.pageUrl;
+        
+        // Check if lyrics match by pageUrl (more reliable) or trackId
+        const lyricsMatch = (this.currentTrackPageUrl && this.currentTrackPageUrl === currentPageUrl) ||
+                           (this.currentTrackId && this.currentTrackId === currentTrackId);
+        
+        // Navigate to lyrics page first
+        this.navigateToPage('lyrics');
+        
+        // Update refresh button visibility
+        this.updateRefreshLyricsButton();
+        
+        // Check if we have lyrics for this track
+        if (lyricsMatch && this.currentTrackLyrics) {
+            // Display lyrics
+            if (this.lyricsText) {
+                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
+            }
+        } else {
+            // No lyrics found - show message but keep page open
+            if (this.lyricsText) {
+                if (this.lyricsState === 'loading') {
+                    this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+                } else if (this.lyricsState === 'notfound') {
+                    this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
+                } else if (this.lyricsState === 'error') {
+                    this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
+                } else {
+                    this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
+                }
+            }
+            
+            // If pageUrl exists, try to extract lyrics (only if not already loading)
+            if (currentTrack.pageUrl && this.lyricsState !== 'loading' && this.lyricsState !== 'notfound') {
+                console.log('No lyrics found, attempting to extract for:', currentTrack.title);
+                this.extractLyrics(currentTrack.pageUrl, currentTrack).then(() => {
+                    // Update display after extraction
+                    this.updateLyricsDisplay();
+                });
+            }
+        }
+    }
+
+    // Update lyrics display when track changes while on lyrics page
+    updateLyricsDisplay() {
+        const currentTrack = this.playlist[this.currentIndex];
+        if (!currentTrack) {
+            return;
+        }
+        
+        const currentTrackId = currentTrack.id || currentTrack.url || currentTrack.pageUrl;
+        
+        // Update title
+        if (this.lyricsTitle) {
+            this.lyricsTitle.textContent = `${currentTrack.title} - ${currentTrack.artist}`;
+        }
+        
+        // Update refresh button visibility
+        this.updateRefreshLyricsButton();
+        
+        // Check if lyrics are available for current track
+        if (this.currentTrackLyrics && this.currentTrackId === currentTrackId) {
+            // Update lyrics display
+            if (this.lyricsText) {
+                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
+            }
+        } else if (this.lyricsState === 'loading') {
+            // Still loading, show loading state
+            if (this.lyricsText) {
+                this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+            }
+        } else if (this.lyricsState === 'notfound') {
+            // Lyrics not found
+            if (this.lyricsText) {
+                this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
+            }
+        } else if (this.lyricsState === 'error') {
+            // Error occurred
+            if (this.lyricsText) {
+                this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
+            }
+        } else {
+            // Wait a bit and check again
+            setTimeout(() => {
+                this.updateLyricsDisplay();
+            }, 500);
         }
     }
 
@@ -1716,6 +2194,11 @@ class MusicPlayer {
 
         // Continue playing next track
         this.loadAndPlay(this.playlist[this.currentIndex]);
+        
+        // If we're on lyrics page, update lyrics display after a delay
+        if (this.currentPage === 'lyrics') {
+            setTimeout(() => this.updateLyricsDisplay(), 500);
+        }
     }
 
     playPrevious() {
@@ -1735,6 +2218,11 @@ class MusicPlayer {
         }
 
         this.loadAndPlay(this.playlist[this.currentIndex]);
+        
+        // If we're on lyrics page, update lyrics display
+        if (this.currentPage === 'lyrics') {
+            this.updateLyricsDisplay();
+        }
     }
 
     toggleShuffle() {
