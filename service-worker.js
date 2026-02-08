@@ -1,5 +1,5 @@
 // Service Worker for MyTehran Music Player PWA
-const CACHE_NAME = 'mytehran-music-v2';
+const CACHE_NAME = 'mytehran-music-v3';
 const AUDIO_CACHE_NAME = 'mytehran-audio-v1';
 const MAX_AUDIO_CACHE_SIZE = 50 * 1024 * 1024; // 50MB limit for audio cache
 

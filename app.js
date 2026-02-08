@@ -12,6 +12,9 @@ class MusicPlayer {
         this.currentSearchPage = 1;
         this.isLoadingMore = false;
         this.hasMoreResults = true;
+        this.customPlaylists = {}; // Initialize customPlaylists
+        this.currentPlaylistId = null;
+        this.nextPlaylistId = 1;
         
         this.initializeElements();
         this.attachEventListeners();
@@ -19,6 +22,11 @@ class MusicPlayer {
         this.loadCustomPlaylists();
         this.loadRecentData();
         this.setupInfiniteScroll();
+        // Setup initial page (home) and display content
+        // Use setTimeout to ensure DOM is fully ready and all data is loaded
+        setTimeout(() => {
+            this.setupNavigation();
+        }, 100);
     }
 
     initializeElements() {
@@ -628,6 +636,11 @@ class MusicPlayer {
         const track = this.searchResults.find(t => t.id === trackId);
         if (!track) return;
         
+        // Ensure customPlaylists is an object
+        if (!this.customPlaylists || typeof this.customPlaylists !== 'object') {
+            this.customPlaylists = {};
+        }
+        
         const playlists = Object.entries(this.customPlaylists);
         if (playlists.length === 0) {
             if (confirm('هیچ پلی‌لیست سفارشی وجود ندارد. می‌خواهید یک پلی‌لیست جدید بسازید؟')) {
@@ -820,6 +833,8 @@ class MusicPlayer {
                 this.cacheAudio(audioUrl);
                 this.playerSection.style.display = 'block';
                 this.updatePlayButton();
+                // Add to recent tracks
+                this.addToRecentTracks(track);
             }).catch(err => {
                 console.error('Play error:', err);
                 // Check if it's a CORS error
@@ -853,7 +868,10 @@ class MusicPlayer {
                 this.audioPlayer.crossOrigin = 'anonymous';
                 this.audioPlayer.src = url;
                 this.cacheAudio(url);
-                this.audioPlayer.play().catch(err => {
+                this.audioPlayer.play().then(() => {
+                    // Add to recent tracks when play succeeds
+                    this.addToRecentTracks(track);
+                }).catch(err => {
                     console.error('Play error:', err);
                     this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
                 });
@@ -1225,10 +1243,20 @@ class MusicPlayer {
     }
 
     loadCustomPlaylists() {
+        // Ensure customPlaylists is initialized
+        if (!this.customPlaylists || typeof this.customPlaylists !== 'object') {
+            this.customPlaylists = {};
+        }
+        
         const saved = localStorage.getItem('mytehranCustomPlaylists');
         if (saved) {
             try {
-                this.customPlaylists = JSON.parse(saved);
+                const parsed = JSON.parse(saved);
+                if (parsed && typeof parsed === 'object') {
+                    this.customPlaylists = parsed;
+                } else {
+                    this.customPlaylists = {};
+                }
             } catch (e) {
                 console.error('Error loading custom playlists:', e);
                 this.customPlaylists = {};
@@ -1240,7 +1268,8 @@ class MusicPlayer {
             this.nextPlaylistId = parseInt(savedNextId);
         }
         
-        this.displayCustomPlaylistsMain();
+        // Don't display here - will be displayed when navigating to playlists page
+        // This prevents error during initialization when currentPage is not set yet
     }
 
     createNewPlaylist() {
@@ -1273,6 +1302,11 @@ class MusicPlayer {
         }
         
         this.playlistsList.innerHTML = '';
+        
+        // Ensure customPlaylists is an object
+        if (!this.customPlaylists || typeof this.customPlaylists !== 'object') {
+            this.customPlaylists = {};
+        }
         
         const playlists = Object.entries(this.customPlaylists);
         if (playlists.length === 0) {
@@ -1542,19 +1576,25 @@ class MusicPlayer {
     }
 
     showLoading(show) {
-        this.loadingIndicator.style.display = show ? 'flex' : 'none';
+        if (this.loadingIndicator) {
+            this.loadingIndicator.style.display = show ? 'flex' : 'none';
+        }
     }
 
     showError(message) {
-        this.errorMessage.textContent = message;
-        this.errorMessage.style.display = 'block';
-        setTimeout(() => {
-            this.hideError();
-        }, 5000);
+        if (this.errorMessage) {
+            this.errorMessage.textContent = message;
+            this.errorMessage.style.display = 'block';
+            setTimeout(() => {
+                this.hideError();
+            }, 5000);
+        }
     }
 
     hideError() {
-        this.errorMessage.style.display = 'none';
+        if (this.errorMessage) {
+            this.errorMessage.style.display = 'none';
+        }
     }
 
     escapeHtml(text) {
@@ -1564,40 +1604,80 @@ class MusicPlayer {
     }
 
     setupNavigation() {
-        // Set initial page
-        this.navigateToPage('home');
+        // Try to load saved page from localStorage
+        let savedPage = 'home';
+        try {
+            const saved = localStorage.getItem('mytehranCurrentPage');
+            console.log('Saved page from localStorage:', saved);
+            if (saved && (saved === 'home' || saved === 'search' || saved === 'playlists')) {
+                savedPage = saved;
+                console.log('Restoring saved page:', savedPage);
+            } else {
+                console.log('No valid saved page found, defaulting to home');
+            }
+        } catch (e) {
+            console.warn('Could not load saved page from localStorage:', e);
+        }
+        
+        console.log('Navigating to page:', savedPage);
+        console.log('Available pages:', Object.keys(this.pages));
+        
+        // Navigate to saved page or default to home
+        this.navigateToPage(savedPage);
     }
 
     navigateToPage(page) {
         console.log('Navigating to page:', page);
+        console.log('Available pages:', this.pages);
         
-        // Hide all pages
+        // Hide all pages first (force hide with !important via inline style)
         Object.values(this.pages).forEach(p => {
             if (p) {
                 p.classList.remove('active');
                 p.style.display = 'none';
+                p.style.visibility = 'hidden';
             }
         });
         
         // Remove active from all nav items
-        this.navItems.forEach(item => item.classList.remove('active'));
+        if (this.navItems && this.navItems.length > 0) {
+            this.navItems.forEach(item => item.classList.remove('active'));
+        }
         
         // Show selected page
         if (this.pages[page]) {
             this.pages[page].classList.add('active');
             this.pages[page].style.display = 'block';
-            console.log('Page', page, 'displayed');
+            this.pages[page].style.visibility = 'visible';
+            console.log('Page', page, 'displayed successfully');
         } else {
-            console.error('Page not found:', page);
+            console.error('Page not found:', page, 'Available:', Object.keys(this.pages));
+            // Fallback to home if page not found
+            if (this.pages.home) {
+                this.pages.home.classList.add('active');
+                this.pages.home.style.display = 'block';
+                this.pages.home.style.visibility = 'visible';
+                page = 'home';
+            }
         }
         
         // Activate nav item
-        const navItem = Array.from(this.navItems).find(item => item.dataset.page === page);
-        if (navItem) {
-            navItem.classList.add('active');
+        if (this.navItems && this.navItems.length > 0) {
+            const navItem = Array.from(this.navItems).find(item => item.dataset.page === page);
+            if (navItem) {
+                navItem.classList.add('active');
+            }
         }
         
         this.currentPage = page;
+        
+        // Save current page to localStorage
+        try {
+            localStorage.setItem('mytehranCurrentPage', page);
+            console.log('Saved current page to localStorage:', page);
+        } catch (e) {
+            console.warn('Could not save current page to localStorage:', e);
+        }
         
         // Update page content
         if (page === 'home') {
@@ -1616,15 +1696,20 @@ class MusicPlayer {
     }
 
     displayRecentTracks() {
+        if (!this.recentTracksContainer) {
+            console.warn('recentTracksContainer not found');
+            return;
+        }
+        
         this.recentTracksContainer.innerHTML = '';
         
-        if (this.recentTracks.length === 0) {
+        if (!this.recentTracks || this.recentTracks.length === 0) {
             this.recentTracksContainer.innerHTML = '<p class="empty-state">هیچ موزیکی پخش نشده است</p>';
             return;
         }
         
-        // Show last 20 tracks
-        const tracksToShow = this.recentTracks.slice(-20).reverse();
+        // Show first 20 tracks (most recent, since we use unshift)
+        const tracksToShow = this.recentTracks.slice(0, 20);
         tracksToShow.forEach(track => {
             const trackEl = this.createTrackElement(track, 'home');
             this.recentTracksContainer.appendChild(trackEl);
@@ -1751,30 +1836,13 @@ class MusicPlayer {
 
         if (!results || results.length === 0) {
             if (clear) {
-                this.resultsContainerMain.innerHTML = '<p class="empty-state">نتیجه‌ای یافت نشد</p>';
+                this.resultsContainerMain.innerHTML = '<p class="empty-state">چیزی پیدا نشد</p>';
             }
             return;
         }
 
         console.log(`Displaying ${results.length} results (clear=${clear})`);
         console.log('Sample result:', results[0]);
-        
-        // Add test div only on first load
-        if (clear) {
-            // Remove old test div if exists
-            const oldTestDiv = this.resultsContainerMain.querySelector('div[style*="background"]');
-            if (oldTestDiv) {
-                oldTestDiv.remove();
-            }
-            
-            const testDiv = document.createElement('div');
-            testDiv.style.padding = '20px';
-            testDiv.style.background = 'var(--bg-card)';
-            testDiv.style.borderRadius = '8px';
-            testDiv.style.marginBottom = '16px';
-            testDiv.innerHTML = `<strong style="color: var(--spotify-green);">${results.length} نتیجه یافت شد</strong>`;
-            this.resultsContainerMain.appendChild(testDiv);
-        }
         
         results.forEach((track, index) => {
             try {
@@ -1866,14 +1934,20 @@ class MusicPlayer {
             this.searchHistory = [];
         }
         
+        console.log('Displaying search history. searchHistory:', this.searchHistory, 'Length:', this.searchHistory.length);
+        console.log('searchHistoryList element:', this.searchHistoryList);
+        
         this.searchHistoryList.innerHTML = '';
         
-        if (this.searchHistory.length === 0) {
+        if (!Array.isArray(this.searchHistory) || this.searchHistory.length === 0) {
             this.searchHistoryList.innerHTML = '<p class="empty-state">هیچ جستجویی انجام نشده است</p>';
+            console.log('No search history to display');
             return;
         }
         
-        this.searchHistory.forEach(query => {
+        console.log('Rendering', this.searchHistory.length, 'search history items');
+        this.searchHistory.forEach((query, index) => {
+            console.log(`Rendering history item ${index + 1}:`, query);
             const item = document.createElement('div');
             item.className = 'history-item';
             item.innerHTML = `
@@ -1897,6 +1971,11 @@ class MusicPlayer {
         }
         
         this.playlistsListMain.innerHTML = '';
+        
+        // Ensure customPlaylists is an object
+        if (!this.customPlaylists || typeof this.customPlaylists !== 'object') {
+            this.customPlaylists = {};
+        }
         
         const playlists = Object.entries(this.customPlaylists);
         if (playlists.length === 0) {
@@ -1978,12 +2057,14 @@ class MusicPlayer {
 
     loadRecentData() {
         const saved = localStorage.getItem('mytehranRecentData');
+        console.log('Loading recent data from localStorage:', saved);
         if (saved) {
             try {
                 const data = JSON.parse(saved);
                 this.recentTracks = Array.isArray(data.tracks) ? data.tracks : [];
                 this.recentPlaylists = Array.isArray(data.playlists) ? data.playlists : [];
                 this.searchHistory = Array.isArray(data.searchHistory) ? data.searchHistory : [];
+                console.log('Loaded searchHistory:', this.searchHistory, 'Length:', this.searchHistory.length);
             } catch (e) {
                 console.error('Error loading recent data:', e);
                 // Initialize as empty arrays on error
@@ -1996,6 +2077,7 @@ class MusicPlayer {
             this.recentTracks = [];
             this.recentPlaylists = [];
             this.searchHistory = [];
+            console.log('No saved data, initializing empty arrays');
         }
         
         // Ensure searchHistory is always an array
@@ -2003,7 +2085,9 @@ class MusicPlayer {
             this.searchHistory = [];
         }
         
-        this.displaySearchHistory();
+        console.log('Final searchHistory after load:', this.searchHistory);
+        
+        console.log('Final searchHistory after load:', this.searchHistory);
     }
 
     saveRecentData() {
