@@ -16,6 +16,7 @@ class MusicPlayer {
         this.currentPlaylistId = null;
         this.nextPlaylistId = 1;
         this.FAVORITE_PLAYLIST_ID = 'favorite'; // Special ID for favorite playlist
+        this.previousPage = null; // Store previous page for player page navigation
         
         this.initializeElements();
         this.attachEventListeners();
@@ -36,7 +37,8 @@ class MusicPlayer {
         this.pages = {
             home: document.getElementById('homePage'),
             search: document.getElementById('searchPage'),
-            playlists: document.getElementById('playlistsPage')
+            playlists: document.getElementById('playlistsPage'),
+            player: document.getElementById('playerPage')
         };
         
         // Search
@@ -52,6 +54,8 @@ class MusicPlayer {
         this.playerBarImage = document.getElementById('playerBarImage');
         this.playerBarTitle = document.getElementById('playerBarTitle');
         this.playerBarArtist = document.getElementById('playerBarArtist');
+        this.playerBarTrack = document.getElementById('playerBarTrack');
+        this.backFromPlayerBtn = document.getElementById('backFromPlayerBtn');
         this.playerBarPlayPause = document.getElementById('playerBarPlayPause');
         this.playerBarPrev = document.getElementById('playerBarPrev');
         this.playerBarNext = document.getElementById('playerBarNext');
@@ -175,6 +179,31 @@ class MusicPlayer {
                     this.playlistDetailPage.classList.remove('active');
                 }
                 this.navigateToPage('playlists');
+            });
+        }
+        
+        // Player page navigation - click on player bar track info
+        if (this.playerBarTrack) {
+            this.playerBarTrack.addEventListener('click', () => {
+                // Only navigate if there's a track playing
+                if (this.currentIndex >= 0 && this.playlist.length > 0) {
+                    // Save current page before navigating to player page
+                    this.previousPage = this.currentPage || 'home';
+                    this.navigateToPage('player');
+                }
+            });
+        }
+        
+        // Back from player page button
+        if (this.backFromPlayerBtn) {
+            this.backFromPlayerBtn.addEventListener('click', () => {
+                // Go back to previous page or home
+                const previousPage = this.previousPage || this.currentPage || 'home';
+                if (previousPage !== 'player') {
+                    this.navigateToPage(previousPage);
+                } else {
+                    this.navigateToPage('home');
+                }
             });
         }
         
@@ -694,8 +723,20 @@ class MusicPlayer {
         div.querySelectorAll('button').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 const action = btn.dataset.action;
-                const trackId = parseInt(btn.dataset.trackId);
+                const trackIdStr = btn.dataset.trackId;
+                
+                if (!trackIdStr) {
+                    console.warn('No trackId found for button:', btn);
+                    return;
+                }
+                
+                const trackId = parseInt(trackIdStr);
+                if (isNaN(trackId)) {
+                    console.warn('Invalid trackId:', trackIdStr);
+                    return;
+                }
                 
                 if (action === 'toggle-favorite') {
                     this.toggleFavorite(trackId);
@@ -873,8 +914,16 @@ class MusicPlayer {
     }
     
     toggleFavorite(trackId) {
+        if (!trackId || isNaN(trackId)) {
+            console.warn('Invalid trackId in toggleFavorite:', trackId);
+            return;
+        }
+        
         const track = this.searchResults.find(t => t.id === trackId);
-        if (!track) return;
+        if (!track) {
+            console.warn('Track not found in searchResults for id:', trackId, 'Available tracks:', this.searchResults.map(t => t.id));
+            return;
+        }
         
         // Ensure favorite playlist exists
         if (!this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
@@ -944,7 +993,10 @@ class MusicPlayer {
             if (this.currentIndex >= this.playlist.length) {
                 this.currentIndex = -1;
                 this.audioPlayer.pause();
-                this.playerSection.style.display = 'none';
+                // Hide bottom player bar if no track is playing
+                if (this.bottomPlayerBar) {
+                    this.bottomPlayerBar.style.display = 'none';
+                }
             }
             
             this.updatePlaylistDisplay();
@@ -1063,7 +1115,10 @@ class MusicPlayer {
                 // Success - remove error handler and cache
                 this.audioPlayer.removeEventListener('error', handleAudioError);
                 this.cacheAudio(audioUrl);
-                this.playerSection.style.display = 'block';
+                // Show bottom player bar - player section is in playerPage
+                if (this.bottomPlayerBar) {
+                    this.bottomPlayerBar.style.display = 'block';
+                }
                 this.updatePlayButton();
                 // Add to recent tracks
                 this.addToRecentTracks(track);
@@ -1107,7 +1162,10 @@ class MusicPlayer {
                     console.error('Play error:', err);
                     this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
                 });
-                this.playerSection.style.display = 'block';
+                // Show bottom player bar - player section is in playerPage
+                if (this.bottomPlayerBar) {
+                    this.bottomPlayerBar.style.display = 'block';
+                }
                 this.updatePlayButton();
             } else {
                 this.showError('نمی‌توان موزیک را پخش کرد. لطفا موزیک دیگری انتخاب کنید.');
@@ -1454,7 +1512,10 @@ class MusicPlayer {
             this.currentIndex = -1;
             this.audioPlayer.pause();
             this.audioPlayer.src = '';
-            this.playerSection.style.display = 'none';
+            // Hide bottom player bar if no track is playing
+            if (this.bottomPlayerBar) {
+                this.bottomPlayerBar.style.display = 'none';
+            }
             this.updatePlaylistDisplay();
             this.savePlaylist();
         }
@@ -2115,6 +2176,13 @@ class MusicPlayer {
                 p.style.visibility = 'hidden';
             }
         });
+        
+        // Also hide playlistDetailPage if it exists (it's not in this.pages)
+        if (this.playlistDetailPage) {
+            this.playlistDetailPage.classList.remove('active');
+            this.playlistDetailPage.style.display = 'none';
+            this.playlistDetailPage.style.visibility = 'hidden';
+        }
         
         // Remove active from all nav items
         if (this.navItems && this.navItems.length > 0) {
