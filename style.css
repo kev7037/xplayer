@@ -24,7 +24,7 @@
 }
 
 body {
-    font-family: 'Circular', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Tahoma', 'Arial', 'Helvetica', 'Segoe UI', sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
@@ -228,27 +228,55 @@ body {
 .history-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .history-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 16px;
+    padding: 6px 10px;
     background: var(--bg-card);
     border-radius: 8px;
     border: 1px solid var(--border-color);
     transition: all 0.2s ease;
+    cursor: pointer;
 }
 
 .history-item:hover {
     background: var(--bg-hover);
 }
 
-.history-item span {
+.history-text {
     color: var(--text-primary);
     flex: 1;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-delete-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.history-delete-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.history-delete-btn svg {
+    width: 16px;
+    height: 16px;
 }
 
 .results-section-main {

@@ -851,9 +851,9 @@ class MusicPlayer {
                 </div>
                 <div class="track-actions">
                     ${source === 'results' ? 
-                        `<button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
-                            <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                        `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
                             </svg>
                          </button>
                          <button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
@@ -861,9 +861,9 @@ class MusicPlayer {
                                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                             </svg>
                          </button>
-                         <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z"/>
+                         <button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
+                            <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                             </svg>
                          </button>` :
                         `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
@@ -3146,8 +3146,8 @@ class MusicPlayer {
             return;
         }
         
-        // Show first 20 tracks (most recent, since we use unshift)
-        const tracksToShow = this.recentTracks.slice(0, 20);
+        // Show first 3 tracks (most recent, since we use unshift)
+        const tracksToShow = this.recentTracks.slice(0, 3);
         tracksToShow.forEach(track => {
             const trackEl = this.createTrackElement(track, 'home');
             this.recentTracksContainer.appendChild(trackEl);
@@ -3162,8 +3162,8 @@ class MusicPlayer {
             return;
         }
         
-        // Show last 10 playlists
-        const playlistsToShow = this.recentPlaylists.slice(-10).reverse();
+        // Show last 3 playlists
+        const playlistsToShow = this.recentPlaylists.slice(-3).reverse();
         playlistsToShow.forEach(({ id, name, tracks }) => {
             // Ensure tracks is a number
             const tracksCount = typeof tracks === 'number' ? tracks : (Array.isArray(tracks) ? tracks.length : 0);
@@ -3364,6 +3364,16 @@ class MusicPlayer {
         this.displaySearchHistory();
     }
 
+    // Remove one item from search history by index
+    deleteSearchHistoryItem(index) {
+        if (!Array.isArray(this.searchHistory)) return;
+        if (index < 0 || index >= this.searchHistory.length) return;
+        
+        this.searchHistory.splice(index, 1);
+        this.saveRecentData();
+        this.displaySearchHistory();
+    }
+
     displaySearchHistory() {
         if (!this.searchHistoryList) {
             console.warn('searchHistoryList not found');
@@ -3391,14 +3401,33 @@ class MusicPlayer {
             const item = document.createElement('div');
             item.className = 'history-item';
             item.innerHTML = `
-                <span>${this.escapeHtml(query)}</span>
-                <button class="btn btn-small btn-search-history" data-query="${this.escapeHtml(query)}">جستجو</button>
+                <div class="history-text">${this.escapeHtml(query)}</div>
+                <button class="btn-icon history-delete-btn" data-index="${index}" title="حذف از سابقه">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6l-1 14H6L5 6"></path>
+                        <path d="M10 11v6"></path>
+                        <path d="M14 11v6"></path>
+                        <path d="M9 6V4h6v2"></path>
+                    </svg>
+                </button>
             `;
             
-            item.querySelector('.btn-search-history').addEventListener('click', () => {
+            // کلیک روی کل سطر → انجام جستجو
+            item.addEventListener('click', () => {
                 this.searchInput.value = query;
                 this.searchMain();
             });
+            
+            // کلیک روی آیکن سطل → حذف از تاریخچه، بدون اجرای جستجو
+            const deleteBtn = item.querySelector('.history-delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(deleteBtn.dataset.index, 10);
+                    this.deleteSearchHistoryItem(idx);
+                });
+            }
             
             this.searchHistoryList.appendChild(item);
         });
