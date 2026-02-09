@@ -934,7 +934,7 @@ class MusicPlayer {
             const handleDirectAudioError = async () => {
                 if (errorHandled) return;
                 errorHandled = true;
-                console.log('Direct audio failed, extracting from page...');
+                // Silently handle - this is expected for CORS-protected URLs
                 await this.extractAndPlayFromPage(track);
             };
             
@@ -951,7 +951,11 @@ class MusicPlayer {
                 this.addToRecentTracks(track);
                 return;
             } catch (err) {
-                console.error('Direct audio play error:', err);
+                // Only log unexpected errors (CORS is expected and handled)
+                if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
+                    !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
+                    console.debug('Direct audio play error (unexpected):', err);
+                }
                 if (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || 
                     err.message.includes('CORS') || err.message.includes('cross-origin')) {
                     handleDirectAudioError();
@@ -1001,11 +1005,17 @@ class MusicPlayer {
                 // Success - remove error handler
                 this.audioPlayer.removeEventListener('error', handleAudioError);
                 this.updatePlayButton();
-                this.player.cacheAudio(audioUrl).catch(err => console.warn('Failed to cache audio:', err));
+                this.player.cacheAudio(audioUrl).catch(() => {
+                    // Silently fail - caching errors are non-critical
+                });
                 this.savePlaylist();
                 this.addToRecentTracks(track);
             } catch (err) {
-                console.error('Play error:', err);
+                // Only log unexpected errors (CORS is expected)
+                if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
+                    !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
+                    console.debug('Play error (unexpected):', err);
+                }
                 // Check if it's a CORS error
                 if (err.name === 'NotAllowedError' || err.message.includes('CORS') || err.message.includes('cross-origin') || err.name === 'NotSupportedError') {
                     handleAudioError(err);
@@ -1035,7 +1045,7 @@ class MusicPlayer {
             this.uiManager.showLoading(false);
             
             if (audioUrl) {
-                console.log('Extracted audio URL:', audioUrl);
+                // Audio URL extracted successfully
                 this.audioPlayer.crossOrigin = 'anonymous';
                 this.audioPlayer.src = audioUrl;
                 
@@ -1043,11 +1053,12 @@ class MusicPlayer {
                     await this.audioPlayer.load();
                     await this.audioPlayer.play();
                     this.updatePlayButton();
-                    this.player.cacheAudio(audioUrl).catch(err => console.warn('Failed to cache audio:', err));
+                    this.player.cacheAudio(audioUrl).catch(() => {
+                        // Silently fail - caching errors are non-critical
+                    });
                     this.savePlaylist();
                     this.addToRecentTracks(track);
                 } catch (playError) {
-                    console.error('Play error after extraction:', playError);
                     // Even extracted URL might have CORS issues
                     // Try with crossOrigin = null
                     this.audioPlayer.crossOrigin = null;
@@ -1056,7 +1067,9 @@ class MusicPlayer {
                         await this.audioPlayer.load();
                         await this.audioPlayer.play();
                         this.updatePlayButton();
-                        this.player.cacheAudio(audioUrl).catch(err => console.warn('Failed to cache audio:', err));
+                        this.player.cacheAudio(audioUrl).catch(() => {
+                        // Silently fail - caching errors are non-critical
+                    });
                         this.savePlaylist();
                         this.addToRecentTracks(track);
                     } catch (retryError) {
@@ -1100,7 +1113,7 @@ class MusicPlayer {
             const musicUrl = playButton.getAttribute('data-music');
             if (musicUrl && musicUrl.trim()) {
                 const normalizedUrl = musicUrl.startsWith('http') ? musicUrl : `https://mytehranmusic.com${musicUrl}`;
-                console.log('Found audio URL from data-music:', normalizedUrl);
+                // Found audio URL from data-music
                 return normalizedUrl;
             }
         }
@@ -1111,7 +1124,7 @@ class MusicPlayer {
             const src = audioSource.src;
             if (src && src.trim() && (src.includes('.mp3') || src.includes('.m4a') || src.includes('.ogg'))) {
                 const normalizedUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
-                console.log('Found audio URL from audio source:', normalizedUrl);
+                // Found audio URL from audio source
                 return normalizedUrl;
             }
         }
@@ -1122,7 +1135,7 @@ class MusicPlayer {
             const src = audioElement.src;
             if (src && src.trim() && (src.includes('.mp3') || src.includes('.m4a') || src.includes('.ogg'))) {
                 const normalizedUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
-                console.log('Found audio URL from audio element:', normalizedUrl);
+                // Found audio URL from audio element
                 return normalizedUrl;
             }
         }
@@ -1135,7 +1148,7 @@ class MusicPlayer {
                        dataAudio.getAttribute('data-mp3');
             if (src && src.trim()) {
                 const normalizedUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
-                console.log('Found audio URL from data attributes:', normalizedUrl);
+                // Found audio URL from data attributes
                 return normalizedUrl;
             }
         }
@@ -1146,7 +1159,7 @@ class MusicPlayer {
             const href = link.href || link.getAttribute('href');
             if (href && (href.includes('.mp3') || href.includes('.m4a') || href.includes('.ogg'))) {
                 const normalizedUrl = href.startsWith('http') ? href : `https://mytehranmusic.com${href}`;
-                console.log('Found audio URL from download link:', normalizedUrl);
+                // Found audio URL from download link
                 return normalizedUrl;
             }
         }
@@ -1159,12 +1172,12 @@ class MusicPlayer {
             const audioUrlMatch = content.match(/https?:\/\/[^\s"']+\.(mp3|m4a|ogg)/i) ||
                                  content.match(/https?:\/\/dl\.mytehranmusic\.com[^\s"']+/i);
             if (audioUrlMatch && audioUrlMatch[0]) {
-                console.log('Found audio URL from script tag:', audioUrlMatch[0]);
+                // Found audio URL from script tag
                 return audioUrlMatch[0];
             }
         }
         
-        console.warn('No audio URL found in HTML');
+        // No audio URL found in HTML (will be handled by caller)
         return null;
     }
 

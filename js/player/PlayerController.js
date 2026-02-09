@@ -49,7 +49,10 @@ export class PlayerController {
         // Setup action handlers for Bluetooth/media controls
         try {
             navigator.mediaSession.setActionHandler('play', () => {
-                this.audio.play().catch(console.error);
+                this.audio.play().catch(err => {
+                    // Silently handle play errors (user might have paused manually)
+                    console.debug('Media Session play error (non-critical):', err);
+                });
             });
 
             navigator.mediaSession.setActionHandler('pause', () => {
@@ -60,7 +63,9 @@ export class PlayerController {
                 if (this.callbacks.onPrevious) {
                     this.callbacks.onPrevious();
                 } else {
-                    this.playPrevious().catch(console.error);
+                    this.playPrevious().catch(err => {
+                        console.debug('Media Session previous error (non-critical):', err);
+                    });
                 }
             });
 
@@ -68,7 +73,9 @@ export class PlayerController {
                 if (this.callbacks.onNext) {
                     this.callbacks.onNext();
                 } else {
-                    this.playNext().catch(console.error);
+                    this.playNext().catch(err => {
+                        console.debug('Media Session next error (non-critical):', err);
+                    });
                 }
             });
 
@@ -172,7 +179,18 @@ export class PlayerController {
      * @private
      */
     _handleError() {
-        console.error('Audio playback error');
+        // Only log if it's a real error (not CORS which is expected)
+        const error = this.audio.error;
+        if (error) {
+            // MEDIA_ERR_SRC_NOT_SUPPORTED (4) is expected for CORS-protected URLs
+            // Only log other error types
+            if (typeof MediaError !== 'undefined' && error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+                // This is expected for CORS-protected URLs, silently handle
+            } else {
+                // Log only unexpected errors
+                console.debug('Audio playback error:', error);
+            }
+        }
         // Call external callback if provided
         if (this.callbacks.onError) {
             this.callbacks.onError();
@@ -418,7 +436,7 @@ export class PlayerController {
                 if (!cached) {
                     try {
                         await cache.add(audioUrl);
-                        console.log('Audio cached successfully:', audioUrl);
+                        // Audio cached successfully
                     } catch (addError) {
                         // CORS or network error - this is expected and normal for cross-origin audio files
                         // Silently fail - don't log as error since this is expected behavior
