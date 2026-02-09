@@ -1080,8 +1080,19 @@ class MusicPlayer {
             return null;
         }
         
+        // Check if HTML is actually JSON (from CORS proxy)
+        let actualHtml = html;
+        try {
+            const jsonData = JSON.parse(html);
+            if (jsonData && jsonData.contents) {
+                actualHtml = jsonData.contents;
+            }
+        } catch (e) {
+            // Not JSON, use as is
+        }
+        
         const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+        const doc = parser.parseFromString(actualHtml, 'text/html');
         
         // Method 1: Check for data-music attribute (most reliable for this site)
         const playButton = doc.querySelector('div.mcpplay[data-music]');
