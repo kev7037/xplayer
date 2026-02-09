@@ -33,7 +33,9 @@ class MusicPlayer {
         }
         this.player = new PlayerController(this.audioPlayer, {
             onTrackEnd: () => this.handleTrackEnd(),
-            onError: () => this.handleAudioError()
+            onError: () => this.handleAudioError(),
+            onNext: () => this.handleNext(),
+            onPrevious: () => this.handlePrevious()
         });
         
         // Initialize navigation
@@ -366,15 +368,28 @@ class MusicPlayer {
 
     async handlePrevious() {
         try {
-            await this.player.playPrevious();
-            this.currentTrack = this.player.getCurrentTrack();
-            this.currentIndex = this.player.currentIndex;
-            this.updatePlayButton();
-            this.updatePlayerUI();
-            this.updatePlaylistDisplay();
-            this.savePlaylist();
-            if (this.currentTrack) {
-                this.addToRecentTracks(this.currentTrack);
+            if (this.playlist.length === 0) return;
+
+            // Ensure PlayerController playlist is synced
+            this.player.setPlaylist(this.playlist);
+
+            let prevIndex;
+            if (this.player.isShuffle && this.player.shuffledIndices.length > 0) {
+                const currentShuffledIndex = this.player.shuffledIndices.indexOf(this.currentIndex);
+                if (currentShuffledIndex > 0) {
+                    prevIndex = this.player.shuffledIndices[currentShuffledIndex - 1];
+                } else {
+                    prevIndex = this.player.shuffledIndices[this.player.shuffledIndices.length - 1];
+                }
+            } else {
+                prevIndex = this.currentIndex <= 0 ? this.playlist.length - 1 : this.currentIndex - 1;
+            }
+
+            this.currentIndex = prevIndex;
+            this.player.setCurrentIndex(prevIndex);
+            const track = this.playlist[prevIndex];
+            if (track) {
+                await this.loadAndPlay(track);
             }
         } catch (error) {
             console.error('Error playing previous:', error);
@@ -383,15 +398,36 @@ class MusicPlayer {
 
     async handleNext() {
         try {
-            await this.player.playNext();
-            this.currentTrack = this.player.getCurrentTrack();
-            this.currentIndex = this.player.currentIndex;
-            this.updatePlayButton();
-            this.updatePlayerUI();
-            this.updatePlaylistDisplay();
-            this.savePlaylist();
-            if (this.currentTrack) {
-                this.addToRecentTracks(this.currentTrack);
+            if (this.playlist.length === 0) return;
+
+            // Ensure PlayerController playlist is synced
+            this.player.setPlaylist(this.playlist);
+
+            let nextIndex;
+            if (this.player.isShuffle && this.player.shuffledIndices.length > 0) {
+                const currentShuffledIndex = this.player.shuffledIndices.indexOf(this.currentIndex);
+                if (currentShuffledIndex >= 0 && currentShuffledIndex < this.player.shuffledIndices.length - 1) {
+                    nextIndex = this.player.shuffledIndices[currentShuffledIndex + 1];
+                } else {
+                    // Regenerate shuffle if at end
+                    this.player.generateShuffledIndices();
+                    nextIndex = this.player.shuffledIndices[0];
+                }
+            } else {
+                nextIndex = (this.currentIndex + 1) % this.playlist.length;
+            }
+
+            if (this.player.repeatMode === REPEAT_MODES.OFF && nextIndex === 0 && this.currentIndex === this.playlist.length - 1) {
+                // End of playlist, no repeat
+                this.player.pause();
+                return;
+            }
+
+            this.currentIndex = nextIndex;
+            this.player.setCurrentIndex(nextIndex);
+            const track = this.playlist[nextIndex];
+            if (track) {
+                await this.loadAndPlay(track);
             }
         } catch (error) {
             console.error('Error playing next:', error);
@@ -841,6 +877,9 @@ class MusicPlayer {
         
         // Store current track
         this.currentTrack = {...track};
+        
+        // Update Media Session metadata for Bluetooth controls and notifications
+        this.player.updateMediaSessionMetadata(track);
         
         // Update UI
         this.updatePlayerUI();

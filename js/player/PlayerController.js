@@ -21,6 +21,7 @@ export class PlayerController {
         this.callbacks = callbacks; // Store callbacks for external handlers
 
         this._setupAudioEvents();
+        this._setupMediaSession();
     }
 
     /**
@@ -32,6 +33,119 @@ export class PlayerController {
         this.audio.addEventListener('error', () => this._handleError());
         this.audio.addEventListener('timeupdate', () => this._onTimeUpdate());
         this.audio.addEventListener('loadedmetadata', () => this._onMetadataLoaded());
+        this.audio.addEventListener('play', () => this._updateMediaSessionPlaybackState());
+        this.audio.addEventListener('pause', () => this._updateMediaSessionPlaybackState());
+    }
+
+    /**
+     * Setup Media Session API for Bluetooth controls and notifications
+     * @private
+     */
+    _setupMediaSession() {
+        if (!('mediaSession' in navigator)) {
+            return; // Media Session API not supported
+        }
+
+        // Setup action handlers for Bluetooth/media controls
+        try {
+            navigator.mediaSession.setActionHandler('play', () => {
+                this.audio.play().catch(console.error);
+            });
+
+            navigator.mediaSession.setActionHandler('pause', () => {
+                this.audio.pause();
+            });
+
+            navigator.mediaSession.setActionHandler('previoustrack', () => {
+                if (this.callbacks.onPrevious) {
+                    this.callbacks.onPrevious();
+                } else {
+                    this.playPrevious().catch(console.error);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+                if (this.callbacks.onNext) {
+                    this.callbacks.onNext();
+                } else {
+                    this.playNext().catch(console.error);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                const skipTime = details.seekOffset || 10;
+                this.audio.currentTime = Math.max(0, this.audio.currentTime - skipTime);
+            });
+
+            navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                const skipTime = details.seekOffset || 10;
+                this.audio.currentTime = Math.min(this.audio.duration, this.audio.currentTime + skipTime);
+            });
+        } catch (error) {
+            console.warn('Failed to set up Media Session action handlers:', error);
+        }
+    }
+
+    /**
+     * Update Media Session metadata
+     * @private
+     */
+    _updateMediaSessionMetadata() {
+        if (!('mediaSession' in navigator) || !this.currentTrack) {
+            return;
+        }
+
+        try {
+            const metadata = {
+                title: this.currentTrack.title || 'Unknown Title',
+                artist: this.currentTrack.artist || 'Unknown Artist',
+                album: this.currentTrack.album || 'MyTehran Music',
+                artwork: []
+            };
+
+            // Add artwork if available
+            if (this.currentTrack.image) {
+                metadata.artwork = [
+                    { src: this.currentTrack.image, sizes: '96x96', type: 'image/jpeg' },
+                    { src: this.currentTrack.image, sizes: '128x128', type: 'image/jpeg' },
+                    { src: this.currentTrack.image, sizes: '192x192', type: 'image/jpeg' },
+                    { src: this.currentTrack.image, sizes: '256x256', type: 'image/jpeg' },
+                    { src: this.currentTrack.image, sizes: '384x384', type: 'image/jpeg' },
+                    { src: this.currentTrack.image, sizes: '512x512', type: 'image/jpeg' }
+                ];
+            }
+
+            navigator.mediaSession.metadata = new MediaMetadata(metadata);
+        } catch (error) {
+            console.warn('Failed to update Media Session metadata:', error);
+        }
+    }
+
+    /**
+     * Update Media Session metadata (public method)
+     * Can be called externally when track is loaded outside of loadAndPlay
+     */
+    updateMediaSessionMetadata(track) {
+        if (track) {
+            this.currentTrack = track;
+        }
+        this._updateMediaSessionMetadata();
+    }
+
+    /**
+     * Update Media Session playback state
+     * @private
+     */
+    _updateMediaSessionPlaybackState() {
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        try {
+            navigator.mediaSession.playbackState = this.audio.paused ? 'paused' : 'playing';
+        } catch (error) {
+            console.warn('Failed to update Media Session playback state:', error);
+        }
     }
 
     /**
@@ -113,9 +227,13 @@ export class PlayerController {
         this.currentTrack = track;
         this.audio.src = track.url;
         
+        // Update Media Session metadata
+        this._updateMediaSessionMetadata();
+        
         try {
             await this.audio.load();
             await this.audio.play();
+            this._updateMediaSessionPlaybackState();
         } catch (error) {
             console.error('Error loading/playing track:', error);
             throw error;
@@ -153,6 +271,7 @@ export class PlayerController {
         } else {
             this.audio.pause();
         }
+        this._updateMediaSessionPlaybackState();
     }
 
     /**
