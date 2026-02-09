@@ -17,33 +17,20 @@ class MusicPlayer {
         this.nextPlaylistId = 1;
         this.FAVORITE_PLAYLIST_ID = 'favorite'; // Special ID for favorite playlist
         this.previousPage = null; // Store previous page for player page navigation
-        
-        // Media Session - track previous button clicks and track start time
-        this.trackStartTime = null; // When current track started playing
-        this.isSeekingBackward = false;
-        this.isSeekingForward = false;
-        this.seekInterval = null;
-        this.seekBackwardStartTime = null;
-        this.seekForwardStartTime = null;
-        this.lastPreviousTrackTime = null; // Last time previoustrack was called
-        this.lastNextTrackTime = null; // Last time nexttrack was called
-        this.previousTrackTimeout = null; // Timeout to detect button hold
-        this.nextTrackTimeout = null; // Timeout to detect button hold
-        this.isHoldingPrevious = false; // Flag to track if previous button is being held
-        this.isHoldingNext = false; // Flag to track if next button is being held
+        this.currentTrack = null; // Store currently playing track
+        this.lyricsCache = {}; // Cache for lyrics by track URL
         
         this.initializeElements();
         this.attachEventListeners();
-        this.setupMediaSession();
         this.loadPlaylist();
         this.loadCustomPlaylists();
         this.loadRecentData();
+        this.loadLyricsCache();
         this.setupInfiniteScroll();
         // Setup initial page (home) and display content
         // Use setTimeout to ensure DOM is fully ready and all data is loaded
         setTimeout(() => {
             this.setupNavigation();
-            this.showCacheHelper();
         }, 100);
     }
 
@@ -86,12 +73,20 @@ class MusicPlayer {
         this.playerBarShuffleOffIcon = document.getElementById('playerBarShuffleOffIcon');
         this.playerBarShuffleOnIcon = document.getElementById('playerBarShuffleOnIcon');
         
-        // Progress Bar
+        // Progress Bar (Bottom Player Bar)
         this.playerBarProgressContainer = document.getElementById('playerBarProgressContainer');
         this.playerBarProgressTrack = document.getElementById('playerBarProgressTrack');
         this.playerBarProgressFill = document.getElementById('playerBarProgressFill');
         this.playerBarProgressHandle = document.getElementById('playerBarProgressHandle');
         this.isDraggingProgress = false;
+        
+        // Progress Bar (Player Section)
+        this.progressBarTrack = document.getElementById('progressBarTrack');
+        this.progressBarFill = document.getElementById('progressBarFill');
+        this.progressBarHandle = document.getElementById('progressBarHandle');
+        this.currentTimeEl = document.getElementById('currentTime');
+        this.totalTimeEl = document.getElementById('totalTime');
+        this.isDraggingPlayerProgress = false;
         
         // Controls
         this.playPauseBtn = document.getElementById('playPauseBtn');
@@ -99,6 +94,26 @@ class MusicPlayer {
         this.nextBtn = document.getElementById('nextBtn');
         this.shuffleBtn = document.getElementById('shuffleBtn');
         this.repeatBtn = document.getElementById('repeatBtn');
+        
+        // Player section action buttons
+        this.playerFavoriteBtn = document.getElementById('playerFavoriteBtn');
+        this.playerAddToPlaylistBtn = document.getElementById('playerAddToPlaylistBtn');
+        this.playerLyricsBtn = document.getElementById('playerLyricsBtn');
+        this.playerFavoriteIcon = document.getElementById('playerFavoriteIcon');
+        
+        // Lyrics section (in player page)
+        this.lyricsSection = document.getElementById('lyricsSection');
+        this.lyricsContent = document.getElementById('lyricsContent');
+        this.lyricsFooter = document.getElementById('lyricsFooter');
+        this.closeLyricsBtn = document.getElementById('closeLyricsBtn');
+        this.retryLyricsBtn = document.getElementById('retryLyricsBtn');
+        
+        // Lyrics page
+        this.lyricsPageContent = document.getElementById('lyricsPageContent');
+        this.lyricsPageTrackTitle = document.getElementById('lyricsPageTrackTitle');
+        this.lyricsPageTrackArtist = document.getElementById('lyricsPageTrackArtist');
+        this.backFromLyricsBtn = document.getElementById('backFromLyricsBtn');
+        this.refreshLyricsBtn = document.getElementById('refreshLyricsBtn');
         
         // Home Page
         this.recentTracksContainer = document.getElementById('recentTracks');
@@ -117,28 +132,6 @@ class MusicPlayer {
         this.playlistDetailPage = document.getElementById('playlistDetailPage');
         this.playlistTracksContainer = document.getElementById('playlistTracksContainer');
         this.backToPlaylistsBtn = document.getElementById('backToPlaylistsBtn');
-        
-        // Lyrics
-        this.lyricsBtn = document.getElementById('lyricsBtn');
-        this.lyricsPage = document.getElementById('lyricsPage');
-        this.lyricsTitle = document.getElementById('lyricsTitle');
-        this.lyricsText = document.getElementById('lyricsText');
-        this.backFromLyricsBtn = document.getElementById('backFromLyricsBtn');
-        this.lyricsIcon = document.getElementById('lyricsIcon');
-        this.lyricsLoadingIcon = document.getElementById('lyricsLoadingIcon');
-        this.lyricsNotFoundIcon = document.getElementById('lyricsNotFoundIcon');
-        this.lyricsRetryIcon = document.getElementById('lyricsRetryIcon');
-        this.refreshLyricsBtn = document.getElementById('refreshLyricsBtn');
-        this.refreshLyricsIcon = document.getElementById('refreshLyricsIcon');
-        this.refreshLyricsLoadingIcon = document.getElementById('refreshLyricsLoadingIcon');
-        this.refreshLyricsIcon = document.getElementById('refreshLyricsIcon');
-        this.refreshLyricsLoadingIcon = document.getElementById('refreshLyricsLoadingIcon');
-        this.currentTrackLyrics = null; // Store current track lyrics
-        this.currentTrackPageUrl = null; // Store current track pageUrl for retry
-        this.currentTrackId = null; // Store current track ID to prevent showing wrong lyrics
-        this.lyricsState = 'none'; // 'none', 'loading', 'found', 'notfound', 'error'
-        this.lyricsCache = {}; // Cache for lyrics (key: pageUrl, value: lyrics data)
-        this.loadLyricsCache(); // Load cached lyrics on startup
         
         // UI
         this.loadingIndicator = document.getElementById('loadingIndicator');
@@ -168,18 +161,17 @@ class MusicPlayer {
             this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
             this.playNext();
         });
-        this.audioPlayer.addEventListener('play', () => {
-            this.updateMediaSessionPlaybackState();
-        });
-        this.audioPlayer.addEventListener('pause', () => {
-            this.updateMediaSessionPlaybackState();
-        });
         this.audioPlayer.addEventListener('timeupdate', () => {
             this.updateProgressBar();
         });
         this.audioPlayer.addEventListener('loadedmetadata', () => {
             this.updateProgressBar();
         });
+        
+        // Player section progress bar event listeners
+        if (this.progressBarTrack) {
+            this.setupPlayerProgressBar();
+        }
 
         // Player controls
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
@@ -187,6 +179,31 @@ class MusicPlayer {
         this.nextBtn.addEventListener('click', () => this.playNext());
         this.shuffleBtn.addEventListener('click', () => this.toggleShuffle());
         this.repeatBtn.addEventListener('click', () => this.toggleRepeat());
+        
+        // Player section action buttons
+        if (this.playerFavoriteBtn) {
+            this.playerFavoriteBtn.addEventListener('click', () => this.handlePlayerFavorite());
+        }
+        if (this.playerAddToPlaylistBtn) {
+            this.playerAddToPlaylistBtn.addEventListener('click', () => this.handlePlayerAddToPlaylist());
+        }
+        if (this.playerLyricsBtn) {
+            this.playerLyricsBtn.addEventListener('click', () => this.handlePlayerLyrics());
+        }
+        if (this.closeLyricsBtn) {
+            this.closeLyricsBtn.addEventListener('click', () => this.hideLyrics());
+        }
+        if (this.retryLyricsBtn) {
+            this.retryLyricsBtn.addEventListener('click', () => this.retryLoadLyrics());
+        }
+        if (this.backFromLyricsBtn) {
+            this.backFromLyricsBtn.addEventListener('click', () => {
+                this.navigateToPage('player');
+            });
+        }
+        if (this.refreshLyricsBtn) {
+            this.refreshLyricsBtn.addEventListener('click', () => this.handleRefreshLyrics());
+        }
 
         // Playlist controls
         if (this.clearPlaylistBtn) {
@@ -223,6 +240,8 @@ class MusicPlayer {
                     this.playlistDetailPage.style.visibility = 'hidden';
                     this.playlistDetailPage.classList.remove('active');
                 }
+                // Ensure we navigate to playlists page
+                this.previousPage = null;
                 this.navigateToPage('playlists');
             });
         }
@@ -233,7 +252,12 @@ class MusicPlayer {
                 // Only navigate if there's a track playing
                 if (this.currentIndex >= 0 && this.playlist.length > 0) {
                     // Save current page before navigating to player page
-                    this.previousPage = this.currentPage || 'home';
+                    // Only save if current page is not player to avoid loops
+                    if (this.currentPage && this.currentPage !== 'player') {
+                        this.previousPage = this.currentPage;
+                    } else if (!this.previousPage) {
+                        this.previousPage = 'home';
+                    }
                     this.navigateToPage('player');
                 }
             });
@@ -242,62 +266,19 @@ class MusicPlayer {
         // Back from player page button
         if (this.backFromPlayerBtn) {
             this.backFromPlayerBtn.addEventListener('click', () => {
-                // Go back to previous page or home
-                const previousPage = this.previousPage || this.currentPage || 'home';
-                if (previousPage !== 'player') {
-                    this.navigateToPage(previousPage);
-                } else {
-                    this.navigateToPage('home');
-                }
-            });
-        }
-        
-        // Lyrics button
-        if (this.lyricsBtn) {
-            this.lyricsBtn.addEventListener('click', () => {
-                console.log('Lyrics button clicked, state:', this.lyricsState, 'hasLyrics:', !!this.currentTrackLyrics, 'currentIndex:', this.currentIndex);
+                // Get previous page, ensuring it's not player
+                let targetPage = this.previousPage;
                 
-                // Always show lyrics page, regardless of state
-                // The page will show appropriate message if lyrics not found
-                this.showLyrics();
-            });
-        }
-        
-        // Back from lyrics page button
-        if (this.backFromLyricsBtn) {
-            this.backFromLyricsBtn.addEventListener('click', () => {
-                this.navigateToPage('player');
-            });
-        }
-        
-        // Refresh lyrics button
-        if (this.refreshLyricsBtn) {
-            this.refreshLyricsBtn.addEventListener('click', () => {
-                if (this.currentTrackPageUrl) {
-                    const track = this.playlist[this.currentIndex];
-                    if (track) {
-                        // Show loading state
-                        this.setRefreshLyricsLoading(true);
-                        
-                        // Force refresh by clearing cache for this URL
-                        delete this.lyricsCache[this.currentTrackPageUrl];
-                        this.saveLyricsCache();
-                        
-                        // Extract lyrics again
-                        this.extractLyrics(this.currentTrackPageUrl, track, true).then(() => {
-                            // Hide loading state
-                            this.setRefreshLyricsLoading(false);
-                            
-                            // Update lyrics display if we're on lyrics page
-                            if (this.currentTrackLyrics && this.lyricsText) {
-                                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
-                            }
-                        }).catch(() => {
-                            // Hide loading state on error
-                            this.setRefreshLyricsLoading(false);
-                        });
-                    }
+                // If previousPage is not set or is player, go to home
+                if (!targetPage || targetPage === 'player') {
+                    targetPage = 'home';
                 }
+                
+                // Clear previousPage to prevent loops
+                this.previousPage = null;
+                
+                // Navigate to target page
+                this.navigateToPage(targetPage);
             });
         }
         
@@ -414,20 +395,107 @@ class MusicPlayer {
         }
     }
     
-    updateProgressBar() {
-        if (!this.audioPlayer || !this.playerBarProgressFill || !this.playerBarProgressHandle) return;
+    setupPlayerProgressBar() {
+        if (!this.progressBarTrack) return;
         
-        // Don't update if user is dragging
-        if (this.isDraggingProgress) return;
+        let isMouseDown = false;
         
-        if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
-            const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
-            this.playerBarProgressFill.style.width = percentage + '%';
-            this.playerBarProgressHandle.style.left = percentage + '%';
-        } else {
-            this.playerBarProgressFill.style.width = '0%';
-            this.playerBarProgressHandle.style.left = '0%';
+        // Mouse events
+        this.progressBarTrack.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            this.isDraggingPlayerProgress = true;
+            this.seekToPlayerPosition(e);
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isMouseDown && this.isDraggingPlayerProgress) {
+                this.seekToPlayerPosition(e);
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                this.isDraggingPlayerProgress = false;
+            }
+        });
+        
+        // Touch events for mobile
+        this.progressBarTrack.addEventListener('touchstart', (e) => {
+            isMouseDown = true;
+            this.isDraggingPlayerProgress = true;
+            this.seekToPlayerPosition(e.touches[0]);
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (isMouseDown && this.isDraggingPlayerProgress) {
+                e.preventDefault();
+                this.seekToPlayerPosition(e.touches[0]);
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                this.isDraggingPlayerProgress = false;
+            }
+        });
+    }
+    
+    seekToPlayerPosition(e) {
+        if (!this.progressBarTrack || !this.audioPlayer) return;
+        
+        const rect = this.progressBarTrack.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const percentage = Math.max(0, Math.min(1, x / rect.width));
+        
+        if (this.audioPlayer.duration) {
+            this.audioPlayer.currentTime = percentage * this.audioPlayer.duration;
+            this.updateProgressBar();
         }
+    }
+    
+    updateProgressBar() {
+        if (!this.audioPlayer) return;
+        
+        // Update bottom player bar progress
+        if (this.playerBarProgressFill && this.playerBarProgressHandle && !this.isDraggingProgress) {
+            if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
+                const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
+                this.playerBarProgressFill.style.width = percentage + '%';
+                this.playerBarProgressHandle.style.left = percentage + '%';
+            } else {
+                this.playerBarProgressFill.style.width = '0%';
+                this.playerBarProgressHandle.style.left = '0%';
+            }
+        }
+        
+        // Update player section progress bar
+        if (this.progressBarFill && this.progressBarHandle && !this.isDraggingPlayerProgress) {
+            if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
+                const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
+                this.progressBarFill.style.width = percentage + '%';
+                this.progressBarHandle.style.left = percentage + '%';
+            } else {
+                this.progressBarFill.style.width = '0%';
+                this.progressBarHandle.style.left = '0%';
+            }
+        }
+        
+        // Update time displays
+        if (this.currentTimeEl) {
+            this.currentTimeEl.textContent = this.formatTime(this.audioPlayer.currentTime || 0);
+        }
+        if (this.totalTimeEl && this.audioPlayer.duration) {
+            this.totalTimeEl.textContent = this.formatTime(this.audioPlayer.duration);
+        }
+    }
+    
+    formatTime(seconds) {
+        if (!seconds || isNaN(seconds)) return '0:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
     async search() {
@@ -1013,9 +1081,24 @@ class MusicPlayer {
             return;
         }
         
-        const track = this.searchResults.find(t => t.id === trackId);
+        // Try to find track in different sources
+        let track = this.searchResults.find(t => t.id === trackId);
         if (!track) {
-            console.warn('Track not found in searchResults for id:', trackId, 'Available tracks:', this.searchResults.map(t => t.id));
+            track = this.playlist.find(t => t.id === trackId);
+        }
+        if (!track) {
+            track = this.recentTracks.find(t => t.id === trackId);
+        }
+        if (!track) {
+            // Try to find in custom playlists
+            for (const playlist of Object.values(this.customPlaylists)) {
+                track = playlist.tracks.find(t => t.id === trackId);
+                if (track) break;
+            }
+        }
+        
+        if (!track) {
+            console.warn('Track not found for id:', trackId);
             return;
         }
         
@@ -1067,6 +1150,686 @@ class MusicPlayer {
             this.saveCustomPlaylists();
             this.showToast('آهنگ به علاقه‌مندی‌ها اضافه شد', 'success');
         }
+        
+        // Update player section favorite button if current track
+        if (this.currentTrack && this.isSameTrack(this.currentTrack, track)) {
+            this.updatePlayerFavoriteButton();
+        }
+    }
+    
+    // Helper function to check if two tracks are the same
+    isSameTrack(track1, track2) {
+        if (!track1 || !track2) return false;
+        const normalizeUrl = (url) => {
+            if (!url) return '';
+            try {
+                const urlObj = new URL(url);
+                return urlObj.origin + urlObj.pathname;
+            } catch (e) {
+                return url.split('?')[0].split('#')[0];
+            }
+        };
+        const url1 = normalizeUrl(track1.url);
+        const url2 = normalizeUrl(track2.url);
+        const pageUrl1 = track1.pageUrl ? normalizeUrl(track1.pageUrl) : null;
+        const pageUrl2 = track2.pageUrl ? normalizeUrl(track2.pageUrl) : null;
+        return url1 === url2 || (pageUrl1 && pageUrl2 && pageUrl1 === pageUrl2);
+    }
+    
+    // Update player section favorite button state
+    updatePlayerFavoriteButton() {
+        if (!this.playerFavoriteBtn || !this.currentTrack) return;
+        
+        const isFavorite = this.isTrackInFavoritesByUrl(this.currentTrack);
+        if (isFavorite) {
+            this.playerFavoriteBtn.classList.add('active');
+            if (this.playerFavoriteIcon) {
+                this.playerFavoriteIcon.setAttribute('fill', 'currentColor');
+            }
+        } else {
+            this.playerFavoriteBtn.classList.remove('active');
+            if (this.playerFavoriteIcon) {
+                this.playerFavoriteIcon.setAttribute('fill', 'none');
+            }
+        }
+    }
+    
+    // Handle favorite button click in player section
+    handlePlayerFavorite() {
+        if (!this.currentTrack) {
+            this.showToast('هیچ آهنگی در حال پخش نیست', 'error');
+            return;
+        }
+        
+        // Try to find track ID from different sources
+        let trackId = this.currentTrack.id;
+        
+        // If no ID, try to find track by URL in different sources
+        if (!trackId) {
+            const foundTrack = this.searchResults.find(t => this.isSameTrack(t, this.currentTrack)) ||
+                             this.playlist.find(t => this.isSameTrack(t, this.currentTrack)) ||
+                             this.recentTracks.find(t => this.isSameTrack(t, this.currentTrack));
+            if (foundTrack) {
+                trackId = foundTrack.id;
+            }
+        }
+        
+        if (trackId) {
+            this.toggleFavorite(trackId);
+        } else {
+            // If no track ID, toggle favorite directly using track object
+            this.toggleFavoriteByTrack(this.currentTrack);
+        }
+    }
+    
+    // Toggle favorite by track object (when track ID is not available)
+    toggleFavoriteByTrack(track) {
+        if (!track) return;
+        
+        // Ensure favorite playlist exists
+        if (!this.customPlaylists[this.FAVORITE_PLAYLIST_ID]) {
+            this.customPlaylists[this.FAVORITE_PLAYLIST_ID] = {
+                name: 'علاقه‌مندی‌ها',
+                tracks: [],
+                downloaded: false,
+                isFavorite: true
+            };
+        }
+        
+        const favoritePlaylist = this.customPlaylists[this.FAVORITE_PLAYLIST_ID];
+        
+        const normalizeUrl = (url) => {
+            if (!url) return '';
+            try {
+                const urlObj = new URL(url);
+                return urlObj.origin + urlObj.pathname;
+            } catch (e) {
+                return url.split('?')[0].split('#')[0];
+            }
+        };
+        
+        const trackUrl = normalizeUrl(track.url);
+        const trackPageUrl = track.pageUrl ? normalizeUrl(track.pageUrl) : null;
+        
+        const existingIndex = favoritePlaylist.tracks.findIndex(t => {
+            const existingUrl = normalizeUrl(t.url);
+            const existingPageUrl = t.pageUrl ? normalizeUrl(t.pageUrl) : null;
+            
+            return existingUrl === trackUrl || 
+                   (trackPageUrl && existingPageUrl === trackPageUrl) ||
+                   (trackPageUrl && existingUrl === trackPageUrl) ||
+                   (existingPageUrl && trackUrl === existingPageUrl);
+        });
+        
+        if (existingIndex !== -1) {
+            favoritePlaylist.tracks.splice(existingIndex, 1);
+            this.saveCustomPlaylists();
+            this.showToast('آهنگ از علاقه‌مندی‌ها حذف شد', 'success');
+        } else {
+            favoritePlaylist.tracks.push({...track});
+            this.saveCustomPlaylists();
+            this.showToast('آهنگ به علاقه‌مندی‌ها اضافه شد', 'success');
+        }
+        
+        this.updatePlayerFavoriteButton();
+    }
+    
+    // Handle add to playlist button click in player section
+    handlePlayerAddToPlaylist() {
+        if (!this.currentTrack) {
+            this.showToast('هیچ آهنگی در حال پخش نیست', 'error');
+            return;
+        }
+        
+        // Find track ID from different sources
+        let trackId = this.currentTrack.id;
+        if (!trackId) {
+            const foundTrack = this.searchResults.find(t => this.isSameTrack(t, this.currentTrack)) ||
+                             this.playlist.find(t => this.isSameTrack(t, this.currentTrack)) ||
+                             this.recentTracks.find(t => this.isSameTrack(t, this.currentTrack));
+            if (foundTrack) {
+                trackId = foundTrack.id;
+            }
+        }
+        
+        if (trackId) {
+            this.showAddToPlaylistDialog(trackId);
+        } else {
+            // If no track ID, show dialog using track object directly
+            this.showAddToPlaylistDialogByTrack(this.currentTrack);
+        }
+    }
+    
+    // Handle lyrics button click in player section
+    handlePlayerLyrics() {
+        if (!this.currentTrack) {
+            this.showToast('هیچ آهنگی در حال پخش نیست', 'error');
+            return;
+        }
+        
+        // Navigate to lyrics page
+        this.navigateToPage('lyrics');
+        this.loadLyricsPage();
+    }
+    
+    // Reset lyrics section for new track
+    resetLyricsForNewTrack() {
+        if (this.lyricsContent) {
+            this.lyricsContent.dataset.loaded = 'false';
+            this.lyricsContent.dataset.trackUrl = '';
+            // If lyrics section is visible, reload lyrics for new track
+            if (this.lyricsSection && this.lyricsSection.style.display !== 'none') {
+                this.showLyrics();
+            }
+        }
+    }
+    
+    // Show lyrics section and load lyrics
+    async showLyrics(forceReload = false) {
+        if (!this.lyricsSection || !this.lyricsContent || !this.currentTrack) return;
+        
+        // Show lyrics section
+        this.lyricsSection.style.display = 'block';
+        
+        // Hide retry button initially
+        if (this.lyricsFooter) {
+            this.lyricsFooter.style.display = 'none';
+        }
+        
+        // Get cache key from track URL
+        const cacheKey = this.getLyricsCacheKey(this.currentTrack);
+        
+        // Check cache first (unless force reload)
+        if (!forceReload && cacheKey && this.lyricsCache[cacheKey] !== undefined) {
+            const cachedLyrics = this.lyricsCache[cacheKey];
+            // Ensure cachedLyrics is a non-empty string before using it
+            if (typeof cachedLyrics === 'string' && cachedLyrics.trim()) {
+                // Use cached lyrics
+                this.lyricsContent.innerHTML = `<div class="lyrics-text">${this.formatLyrics(cachedLyrics)}</div>`;
+                this.lyricsContent.dataset.loaded = 'true';
+                this.lyricsContent.dataset.trackUrl = this.currentTrack.url;
+                return;
+            } else {
+                // Cached as "no lyrics found" - show with retry button
+                this.lyricsContent.innerHTML = `
+                    <div class="lyrics-empty">
+                        <p>متن آهنگ یافت نشد</p>
+                    </div>
+                `;
+                this.lyricsContent.dataset.loaded = 'true';
+                this.lyricsContent.dataset.trackUrl = this.currentTrack.url;
+                // Show retry button
+                if (this.lyricsFooter) {
+                    this.lyricsFooter.style.display = 'flex';
+                }
+                return;
+            }
+        }
+        
+        // Check if lyrics already loaded for this track (in current session) - unless force reload
+        if (!forceReload && this.lyricsContent.dataset.loaded === 'true' && this.lyricsContent.dataset.trackUrl === this.currentTrack.url) {
+            return; // Already loaded for this track
+        }
+        
+        // Show loading state
+        this.lyricsContent.innerHTML = `
+            <div class="lyrics-loading">
+                <div class="spinner spinner-small"></div>
+                <p>در حال بارگذاری متن آهنگ...</p>
+            </div>
+        `;
+        
+        // Extract lyrics from page
+        let lyrics = null;
+        let errorOccurred = false;
+        
+        try {
+            lyrics = await this.extractLyrics(this.currentTrack);
+        } catch (error) {
+            console.error('Error loading lyrics:', error);
+            errorOccurred = true;
+        }
+        
+        if (lyrics && lyrics.trim()) {
+            // Cache the lyrics
+            if (cacheKey) {
+                this.lyricsCache[cacheKey] = lyrics;
+                this.saveLyricsCache();
+            }
+            
+            // Display lyrics
+            this.lyricsContent.innerHTML = `<div class="lyrics-text">${this.formatLyrics(lyrics)}</div>`;
+            this.lyricsContent.dataset.loaded = 'true';
+            this.lyricsContent.dataset.trackUrl = this.currentTrack.url;
+        } else {
+            // No lyrics found or error occurred
+            if (errorOccurred) {
+                // Error state - show retry button
+                this.lyricsContent.innerHTML = `
+                    <div class="lyrics-error">
+                        <p>خطا در بارگذاری متن آهنگ</p>
+                        <p class="lyrics-error-detail">لطفا دوباره تلاش کنید</p>
+                    </div>
+                `;
+                // Show retry button
+                if (this.lyricsFooter) {
+                    this.lyricsFooter.style.display = 'flex';
+                }
+            } else {
+                // No lyrics found - cache empty string to avoid retrying (but allow manual retry)
+                if (cacheKey && !forceReload) {
+                    this.lyricsCache[cacheKey] = '';
+                    this.saveLyricsCache();
+                }
+                
+                // Show empty state with retry button
+                this.lyricsContent.innerHTML = `
+                    <div class="lyrics-empty">
+                        <p>متن آهنگ یافت نشد</p>
+                    </div>
+                `;
+                // Show retry button
+                if (this.lyricsFooter) {
+                    this.lyricsFooter.style.display = 'flex';
+                }
+            }
+            this.lyricsContent.dataset.loaded = 'true';
+            this.lyricsContent.dataset.trackUrl = this.currentTrack.url;
+        }
+    }
+    
+    // Retry loading lyrics
+    retryLoadLyrics() {
+        if (!this.currentTrack) return;
+        
+        // Clear cache for this track to force reload
+        const cacheKey = this.getLyricsCacheKey(this.currentTrack);
+        if (cacheKey && this.lyricsCache[cacheKey]) {
+            delete this.lyricsCache[cacheKey];
+            this.saveLyricsCache();
+        }
+        
+        // Reset loaded state
+        if (this.lyricsContent) {
+            this.lyricsContent.dataset.loaded = 'false';
+            this.lyricsContent.dataset.trackUrl = '';
+        }
+        
+        // Reload lyrics
+        this.showLyrics(true);
+    }
+    
+    // Load lyrics page content
+    async loadLyricsPage(forceReload = false) {
+        if (!this.currentTrack) return;
+        
+        // Update track info
+        if (this.lyricsPageTrackTitle) {
+            this.lyricsPageTrackTitle.textContent = this.currentTrack.title || '-';
+        }
+        if (this.lyricsPageTrackArtist) {
+            this.lyricsPageTrackArtist.textContent = this.currentTrack.artist || '-';
+        }
+        
+        // Get cache key
+        const cacheKey = this.getLyricsCacheKey(this.currentTrack);
+        
+        // Check cache first (unless force reload)
+        if (!forceReload && cacheKey && this.lyricsCache[cacheKey] !== undefined) {
+            const cachedLyrics = this.lyricsCache[cacheKey];
+            if (typeof cachedLyrics === 'string' && cachedLyrics.trim() && cachedLyrics.length >= 10) {
+                // Use cached lyrics
+                this.displayLyricsPageContent(cachedLyrics);
+                return;
+            } else {
+                // Cached as "no lyrics found"
+                this.displayLyricsPageError('متن آهنگ یافت نشد');
+                return;
+            }
+        }
+        
+        // Show loading state
+        if (this.lyricsPageContent) {
+            this.lyricsPageContent.innerHTML = `
+                <div class="lyrics-loading">
+                    <div class="spinner spinner-small"></div>
+                    <p>در حال بارگذاری متن آهنگ...</p>
+                </div>
+            `;
+        }
+        
+        // Extract lyrics from page
+        let lyrics = null;
+        let errorOccurred = false;
+        
+        try {
+            lyrics = await this.extractLyrics(this.currentTrack);
+        } catch (error) {
+            console.error('Error loading lyrics:', error);
+            errorOccurred = true;
+        }
+        
+        if (lyrics && lyrics.trim() && lyrics.length >= 10) {
+            // Cache the lyrics
+            if (cacheKey) {
+                this.lyricsCache[cacheKey] = lyrics;
+                this.saveLyricsCache();
+            }
+            
+            // Display lyrics
+            this.displayLyricsPageContent(lyrics);
+        } else {
+            // No lyrics found or error occurred
+            if (errorOccurred) {
+                this.displayLyricsPageError('خطا در بارگذاری متن آهنگ');
+            } else {
+                // Cache empty string to avoid retrying
+                if (cacheKey && !forceReload) {
+                    this.lyricsCache[cacheKey] = '';
+                    this.saveLyricsCache();
+                }
+                this.displayLyricsPageError('متن آهنگ یافت نشد');
+            }
+        }
+    }
+    
+    // Display lyrics content on lyrics page
+    displayLyricsPageContent(lyrics) {
+        if (!this.lyricsPageContent) return;
+        this.lyricsPageContent.innerHTML = `<div class="lyrics-text-page">${this.formatLyricsForPage(lyrics)}</div>`;
+    }
+    
+    // Display error on lyrics page
+    displayLyricsPageError(message) {
+        if (!this.lyricsPageContent) return;
+        this.lyricsPageContent.innerHTML = `
+            <div class="lyrics-empty">
+                <p>${message}</p>
+            </div>
+        `;
+    }
+    
+    // Format lyrics for display on lyrics page
+    formatLyricsForPage(lyrics) {
+        // Escape HTML
+        lyrics = this.escapeHtml(lyrics);
+        // Replace line breaks with <br>
+        lyrics = lyrics.replace(/\n/g, '<br>');
+        return lyrics;
+    }
+    
+    // Handle refresh lyrics button
+    handleRefreshLyrics() {
+        if (!this.currentTrack) return;
+        
+        // Clear cache for this track
+        const cacheKey = this.getLyricsCacheKey(this.currentTrack);
+        if (cacheKey && this.lyricsCache[cacheKey]) {
+            delete this.lyricsCache[cacheKey];
+            this.saveLyricsCache();
+        }
+        
+        // Reload lyrics
+        this.loadLyricsPage(true);
+    }
+    
+    // Get cache key for lyrics
+    getLyricsCacheKey(track) {
+        if (!track) return null;
+        // Use pageUrl if available, otherwise use url
+        const url = track.pageUrl || track.url;
+        if (!url) return null;
+        // Normalize URL for cache key
+        try {
+            const urlObj = new URL(url);
+            return urlObj.origin + urlObj.pathname;
+        } catch (e) {
+            return url.split('?')[0].split('#')[0];
+        }
+    }
+    
+    // Save lyrics cache to localStorage
+    saveLyricsCache() {
+        try {
+            localStorage.setItem('mytehranLyricsCache', JSON.stringify(this.lyricsCache));
+        } catch (e) {
+            console.warn('Could not save lyrics cache:', e);
+        }
+    }
+    
+    // Load lyrics cache from localStorage
+    loadLyricsCache() {
+        try {
+            const cached = localStorage.getItem('mytehranLyricsCache');
+            if (cached) {
+                this.lyricsCache = JSON.parse(cached);
+            }
+        } catch (e) {
+            console.warn('Could not load lyrics cache:', e);
+            this.lyricsCache = {};
+        }
+    }
+    
+    // Hide lyrics section
+    hideLyrics() {
+        if (this.lyricsSection) {
+            this.lyricsSection.style.display = 'none';
+        }
+    }
+    
+    // Extract lyrics from mytehranmusic.com page using contentp div
+    async extractLyrics(track) {
+        if (!track) return null;
+        
+        // Try pageUrl first, then url
+        const pageUrl = track.pageUrl || track.url;
+        if (!pageUrl) return null;
+        
+        try {
+            // Use CORS proxy to fetch page
+            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+            let response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+                // Try alternative proxy
+                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
+                response = await fetch(proxyUrl);
+            }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            let html;
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const data = await response.json();
+                html = data.contents;
+            } else {
+                html = await response.text();
+            }
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Find contentp div
+            const contentp = doc.querySelector('.contentp');
+            if (!contentp) {
+                return null;
+            }
+            
+            // Pattern 1: Check if there's exactly one div inside contentp with br tags
+            const innerDivs = contentp.querySelectorAll(':scope > div');
+            if (innerDivs.length === 1) {
+                const firstDiv = innerDivs[0];
+                const hasBrTags = contentp.querySelectorAll('br').length > 0;
+                
+                if (hasBrTags) {
+                    // Extract text after the first div
+                    let lyricsText = '';
+                    let foundFirstDiv = false;
+                    
+                    for (const node of contentp.childNodes) {
+                        if (node === firstDiv) {
+                            foundFirstDiv = true;
+                            continue;
+                        }
+                        if (foundFirstDiv) {
+                            if (node.nodeType === Node.TEXT_NODE) {
+                                lyricsText += node.textContent;
+                            } else if (node.nodeName === 'BR') {
+                                lyricsText += '\n';
+                            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                                // Extract text from element
+                                lyricsText += node.textContent;
+                            }
+                        }
+                    }
+                    
+                    lyricsText = this.cleanLyricsText(lyricsText);
+                    if (lyricsText.length >= 10) {
+                        return lyricsText;
+                    }
+                }
+            }
+            
+            // Pattern 2: Find the last non-br, non-text element and extract after it
+            const allNodes = Array.from(contentp.childNodes);
+            let lastNonBrTextIndex = -1;
+            
+            for (let i = allNodes.length - 1; i >= 0; i--) {
+                const node = allNodes[i];
+                const isBr = node.nodeName === 'BR';
+                const isText = node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '';
+                
+                if (!isBr && !isText) {
+                    lastNonBrTextIndex = i;
+                    break;
+                }
+            }
+            
+            if (lastNonBrTextIndex >= 0 && lastNonBrTextIndex < allNodes.length - 1) {
+                let lyricsText = '';
+                
+                for (let i = lastNonBrTextIndex + 1; i < allNodes.length; i++) {
+                    const node = allNodes[i];
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        lyricsText += node.textContent;
+                    } else if (node.nodeName === 'BR') {
+                        lyricsText += '\n';
+                    } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        // Only process if it's a br or text content
+                        if (node.nodeName === 'BR') {
+                            lyricsText += '\n';
+                        } else {
+                            lyricsText += node.textContent;
+                        }
+                    }
+                }
+                
+                lyricsText = this.cleanLyricsText(lyricsText);
+                if (lyricsText.length >= 10) {
+                    return lyricsText;
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error extracting lyrics:', error);
+            throw error; // Re-throw to be caught by showLyrics
+        }
+    }
+    
+    // Clean lyrics text: normalize br tags, remove leading/trailing brs
+    cleanLyricsText(text) {
+        if (!text) return '';
+        
+        // Replace multiple consecutive br tags (more than 2) with 2 brs
+        text = text.replace(/\n{3,}/g, '\n\n');
+        
+        // Remove leading brs and whitespace
+        text = text.replace(/^[\n\s]+/, '');
+        
+        // Remove trailing brs and whitespace
+        text = text.replace(/[\n\s]+$/, '');
+        
+        // Normalize whitespace (multiple spaces to single space)
+        text = text.replace(/[ \t]+/g, ' ');
+        
+        // Remove empty lines (lines with only whitespace)
+        text = text.replace(/\n\s*\n/g, '\n');
+        
+        return text.trim();
+    }
+    
+    // Format lyrics text for display
+    formatLyrics(lyrics) {
+        // Escape HTML
+        lyrics = this.escapeHtml(lyrics);
+        // Replace line breaks with <br>
+        lyrics = lyrics.replace(/\n\n+/g, '</p><p>');
+        lyrics = lyrics.replace(/\n/g, '<br>');
+        // Wrap in paragraphs
+        return `<p>${lyrics}</p>`;
+    }
+    
+    // Show add to playlist dialog by track object
+    showAddToPlaylistDialogByTrack(track) {
+        if (!track) return;
+        
+        // Ensure customPlaylists is an object
+        if (!this.customPlaylists || typeof this.customPlaylists !== 'object') {
+            this.customPlaylists = {};
+        }
+        
+        // Filter out favorite playlist and get other playlists
+        const playlists = Object.entries(this.customPlaylists).filter(([id]) => id !== this.FAVORITE_PLAYLIST_ID);
+        
+        const dialog = document.createElement('div');
+        dialog.className = 'playlist-selector-dialog';
+        dialog.innerHTML = `
+            <div class="dialog-content">
+                <h3>اضافه کردن به پلی‌لیست</h3>
+                <p>${this.escapeHtml(track.title)} - ${this.escapeHtml(track.artist)}</p>
+                <div class="playlist-selector-list">
+                    ${playlists.map(([id, playlist]) => `
+                        <div class="playlist-selector-item">
+                            <span>${this.escapeHtml(playlist.name)} (${playlist.tracks.length} موزیک)</span>
+                            <button class="btn btn-small btn-select-playlist" data-playlist-id="${id}">انتخاب</button>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="dialog-actions">
+                    <button class="btn btn-secondary btn-close-dialog">انصراف</button>
+                    <button class="btn btn-primary btn-create-new-from-dialog">پلی‌لیست جدید</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // Close button
+        dialog.querySelector('.btn-close-dialog').addEventListener('click', () => {
+            document.body.removeChild(dialog);
+        });
+        
+        // Create new playlist
+        dialog.querySelector('.btn-create-new-from-dialog').addEventListener('click', () => {
+            const newPlaylistId = this.createNewPlaylist(track);
+            if (newPlaylistId) {
+                document.body.removeChild(dialog);
+                this.showToast('پلی‌لیست جدید ساخته شد و موزیک اضافه شد', 'success');
+            }
+        });
+        
+        // Select playlist buttons
+        dialog.querySelectorAll('.btn-select-playlist').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const playlistId = btn.dataset.playlistId;
+                this.addTrackToCustomPlaylist(playlistId, track);
+                document.body.removeChild(dialog);
+                this.showToast('موزیک به پلی‌لیست اضافه شد', 'success');
+            });
+        });
     }
 
 
@@ -1111,14 +1874,15 @@ class MusicPlayer {
                 }
             });
             track = this.searchResults.find(t => t.id === trackId);
-            // Make sure track from searchResults has all properties (especially pageUrl)
-            if (track) {
-                // Find the same track in playlist to ensure consistency
-                const playlistTrack = this.playlist.find(t => t.id === trackId);
-                if (playlistTrack) {
-                    // Use playlist track to ensure pageUrl is preserved
-                    track = playlistTrack;
-                }
+        } else if (source === 'home') {
+            // Playing from home page (recent tracks)
+            // Try to find track in recent tracks or playlist
+            track = this.recentTracks.find(t => t.id === trackId) || 
+                    this.playlist.find(t => t.id === trackId);
+            
+            // If track found in recent tracks but not in playlist, add it
+            if (track && !this.playlist.find(t => t.id === trackId)) {
+                this.playlist.push({...track});
             }
         } else {
             // Playing from current playlist
@@ -1128,20 +1892,27 @@ class MusicPlayer {
         if (!track) return;
 
         this.currentIndex = this.playlist.findIndex(t => t.id === trackId);
-        console.log('Playing track:', track.title, 'pageUrl:', track.pageUrl, 'trackId:', track.id);
         this.loadAndPlay(track);
-        
-        // If we're on lyrics page, update lyrics display
-        if (this.currentPage === 'lyrics') {
-            this.updateLyricsDisplay();
-        }
         this.updatePlaylistDisplay();
         this.savePlaylist();
     }
 
     loadAndPlay(track) {
+        // Store current track (make a copy to avoid reference issues)
+        this.currentTrack = {...track};
         this.currentTrackEl.textContent = track.title;
         this.currentArtistEl.textContent = track.artist;
+        
+        // Update player section favorite button state
+        this.updatePlayerFavoriteButton();
+        
+        // Reset lyrics section when track changes
+        this.resetLyricsForNewTrack();
+        
+        // Update lyrics page if it's currently visible
+        if (this.pages.lyrics && this.pages.lyrics.style.display !== 'none') {
+            this.loadLyricsPage();
+        }
         
         // Update bottom player bar
         if (this.playerBarTitle) this.playerBarTitle.textContent = track.title;
@@ -1151,49 +1922,6 @@ class MusicPlayer {
         }
         if (this.bottomPlayerBar) {
             this.bottomPlayerBar.style.display = 'flex';
-        }
-        
-        // Track when this track started playing (for previous button logic)
-        this.trackStartTime = Date.now();
-        
-        // Update Media Session metadata for Bluetooth controls
-        this.updateMediaSessionMetadata(track);
-        
-        // Extract lyrics if pageUrl is available
-        // Clear previous lyrics immediately when track changes
-        this.currentTrackLyrics = null;
-        this.currentTrackPageUrl = track.pageUrl || null;
-        this.currentTrackId = null; // Reset track ID
-        this.setLyricsState('none'); // Reset state immediately
-        
-        // If we're on lyrics page, show loading state
-        if (this.currentPage === 'lyrics' && this.lyricsText) {
-            this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
-        }
-        
-        if (track.pageUrl) {
-            // Extract lyrics for new track
-            console.log('Extracting lyrics for track:', track.title, 'pageUrl:', track.pageUrl);
-            this.extractLyrics(track.pageUrl, track).then(() => {
-                // If we're on lyrics page, update display when lyrics are ready
-                if (this.currentPage === 'lyrics') {
-                    this.updateLyricsDisplay();
-                }
-            }).catch((error) => {
-                console.warn('Error extracting lyrics:', error);
-                // If we're on lyrics page, show error
-                if (this.currentPage === 'lyrics' && this.lyricsText) {
-                    this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
-                }
-            });
-        } else {
-            // Hide lyrics button if no pageUrl
-            console.log('No pageUrl for track:', track.title);
-            this.setLyricsState('none');
-            // If we're on lyrics page, show error
-            if (this.currentPage === 'lyrics' && this.lyricsText) {
-                this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
-            }
         }
         
         // Reset progress bar
@@ -1266,39 +1994,12 @@ class MusicPlayer {
             this.audioPlayer.play().then(() => {
                 // Success - remove error handler and cache
                 this.audioPlayer.removeEventListener('error', handleAudioError);
-                
-                // Check cache status immediately
                 this.cacheAudio(audioUrl);
-                
-                // Check cache status again after audio loads (Service Worker caches when audio is fetched)
-                // Audio element loading triggers Service Worker fetch which may cache it
-                const checkCacheAfterLoad = async () => {
-                    // Wait for audio to start loading
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-                    // Check cache status again
-                    const isCached = await this.isAudioCached(audioUrl);
-                    if (isCached) {
-                        console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
-                    } else {
-                        // Check one more time after longer delay
-                        setTimeout(async () => {
-                            const isCachedLater = await this.isAudioCached(audioUrl);
-                            if (isCachedLater) {
-                                console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
-                            }
-                        }, 3000);
-                    }
-                };
-                checkCacheAfterLoad();
-                
                 // Show bottom player bar - player section is in playerPage
                 if (this.bottomPlayerBar) {
                     this.bottomPlayerBar.style.display = 'block';
                 }
                 this.updatePlayButton();
-                this.updateMediaSessionPlaybackState();
-                // Track when track started playing
-                this.trackStartTime = Date.now();
                 // Add to recent tracks
                 this.addToRecentTracks(track);
             }).catch(err => {
@@ -1335,11 +2036,8 @@ class MusicPlayer {
                 this.audioPlayer.src = url;
                 this.cacheAudio(url);
                 this.audioPlayer.play().then(() => {
-                    // Track when track started playing
-                    this.trackStartTime = Date.now();
                     // Add to recent tracks when play succeeds
                     this.addToRecentTracks(track);
-                    this.updateMediaSessionPlaybackState();
                 }).catch(err => {
                     console.error('Play error:', err);
                     this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
@@ -1448,814 +2146,6 @@ class MusicPlayer {
         }
     }
 
-    // Check if contentp div contains valid lyrics
-    isValidLyrics(contentpDiv) {
-        if (!contentpDiv) return false;
-        
-        // Pattern 1: Check if it has exactly one div inside and br tags
-        const innerDivs = contentpDiv.querySelectorAll(':scope > div');
-        if (innerDivs.length === 1) {
-            const brTags = contentpDiv.querySelectorAll('br');
-            if (brTags.length > 0) {
-                const textContent = contentpDiv.textContent || contentpDiv.innerText;
-                if (textContent && textContent.trim().length >= 10) {
-                    return true;
-                }
-            }
-        }
-        
-        // Pattern 2: Check if there's a point where only br tags and text remain
-        const children = Array.from(contentpDiv.childNodes);
-        let lastNonBrTextIndex = -1;
-        
-        // Find the last element that is not br or text
-        for (let i = 0; i < children.length; i++) {
-            const node = children[i];
-            
-            // Skip whitespace text nodes
-            if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) {
-                continue;
-            }
-            
-            // If we find a non-text, non-br element, mark its position
-            if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR') {
-                lastNonBrTextIndex = i;
-            }
-        }
-        
-        // If we found a last non-br/text element, check if everything after it is br/text
-        if (lastNonBrTextIndex !== -1 && lastNonBrTextIndex < children.length - 1) {
-            const lyricsNodes = children.slice(lastNonBrTextIndex + 1);
-            
-            // Check if all remaining nodes are only br and text
-            const hasOnlyBrAndText = lyricsNodes.every(n => {
-                if (n.nodeType === Node.TEXT_NODE) return true;
-                if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') return true;
-                return false;
-            });
-            
-            if (hasOnlyBrAndText) {
-                // Check if there's meaningful text content
-                const textContent = lyricsNodes
-                    .filter(n => n.nodeType === Node.TEXT_NODE)
-                    .map(n => n.textContent)
-                    .join(' ')
-                    .trim();
-                if (textContent.length >= 10) {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    // Set lyrics button state and show appropriate icon
-    setLyricsState(state) {
-        this.lyricsState = state;
-        
-        // Hide all icons first
-        if (this.lyricsIcon) this.lyricsIcon.style.display = 'none';
-        if (this.lyricsLoadingIcon) this.lyricsLoadingIcon.style.display = 'none';
-        if (this.lyricsNotFoundIcon) this.lyricsNotFoundIcon.style.display = 'none';
-        if (this.lyricsRetryIcon) this.lyricsRetryIcon.style.display = 'none';
-        
-        // Show button based on state
-        if (this.lyricsBtn) {
-            if (state === 'none') {
-                this.lyricsBtn.style.display = 'none';
-            } else {
-                this.lyricsBtn.style.display = 'flex';
-                
-                // Show appropriate icon
-                if (state === 'loading' && this.lyricsLoadingIcon) {
-                    this.lyricsLoadingIcon.style.display = 'block';
-                    this.lyricsBtn.title = 'در حال بارگذاری متن آهنگ...';
-                } else if (state === 'found' && this.lyricsIcon) {
-                    this.lyricsIcon.style.display = 'block';
-                    this.lyricsBtn.title = 'متن آهنگ';
-                } else if (state === 'notfound' && this.lyricsNotFoundIcon) {
-                    this.lyricsNotFoundIcon.style.display = 'block';
-                    this.lyricsBtn.title = 'متن آهنگ یافت نشد';
-                } else if (state === 'error' && this.lyricsRetryIcon) {
-                    this.lyricsRetryIcon.style.display = 'block';
-                    this.lyricsBtn.title = 'خطا در بارگذاری متن آهنگ - برای تلاش مجدد کلیک کنید';
-                }
-            }
-        }
-        
-        // Update refresh button visibility
-        this.updateRefreshLyricsButton();
-    }
-    
-    // Update refresh button visibility based on current state
-    updateRefreshLyricsButton() {
-        if (!this.refreshLyricsBtn) return;
-        
-        const currentTrack = this.playlist[this.currentIndex];
-        // Show refresh button if pageUrl exists (allows retry even if not found)
-        if (currentTrack && currentTrack.pageUrl) {
-            this.refreshLyricsBtn.style.display = 'flex';
-        } else {
-            this.refreshLyricsBtn.style.display = 'none';
-        }
-    }
-
-    // Load lyrics cache from localStorage
-    loadLyricsCache() {
-        try {
-            const cached = localStorage.getItem('mytehranLyricsCache');
-            if (cached) {
-                this.lyricsCache = JSON.parse(cached);
-                console.log('Lyrics cache loaded:', Object.keys(this.lyricsCache).length, 'entries');
-            }
-        } catch (error) {
-            console.warn('Failed to load lyrics cache:', error);
-            this.lyricsCache = {};
-        }
-    }
-
-    // Save lyrics cache to localStorage
-    saveLyricsCache() {
-        try {
-            localStorage.setItem('mytehranLyricsCache', JSON.stringify(this.lyricsCache));
-        } catch (error) {
-            console.warn('Failed to save lyrics cache:', error);
-        }
-    }
-
-    // Set refresh lyrics button loading state
-    setRefreshLyricsLoading(isLoading) {
-        if (this.refreshLyricsIcon && this.refreshLyricsLoadingIcon) {
-            if (isLoading) {
-                this.refreshLyricsIcon.style.display = 'none';
-                this.refreshLyricsLoadingIcon.style.display = 'block';
-                if (this.refreshLyricsBtn) {
-                    this.refreshLyricsBtn.disabled = true;
-                    this.refreshLyricsBtn.title = 'در حال بارگذاری متن آهنگ...';
-                }
-            } else {
-                this.refreshLyricsIcon.style.display = 'block';
-                this.refreshLyricsLoadingIcon.style.display = 'none';
-                if (this.refreshLyricsBtn) {
-                    this.refreshLyricsBtn.disabled = false;
-                    this.refreshLyricsBtn.title = 'بارگذاری مجدد متن آهنگ';
-                }
-            }
-        }
-    }
-
-    // Extract lyrics from page
-    async extractLyrics(pageUrl, track, forceRefresh = false) {
-        if (!pageUrl) {
-            this.setLyricsState('none');
-            return;
-        }
-        
-        // Store current track ID to verify lyrics belong to this track
-        const trackId = track.id || track.url || pageUrl;
-        const previousTrackId = this.currentTrackId; // Store previous track ID
-        this.currentTrackId = trackId; // Set new track ID
-        this.currentTrackPageUrl = pageUrl;
-        
-        // Check cache first (unless force refresh)
-        if (!forceRefresh && this.lyricsCache[pageUrl]) {
-            const cachedLyrics = this.lyricsCache[pageUrl];
-            
-            // Verify this is still the current track before using cached lyrics
-            if (this.currentTrackId === trackId) {
-                // Use cached lyrics immediately (cache is per URL, so it's safe)
-                this.currentTrackLyrics = {
-                    html: cachedLyrics.html,
-                    text: cachedLyrics.text
-                };
-                this.setLyricsState('found');
-                console.log('✅ Lyrics loaded from cache for:', track.title);
-                return;
-            } else {
-                console.log('Track changed, ignoring cached lyrics');
-            }
-        }
-        
-        // Set loading state
-        this.setLyricsState('loading');
-        
-        try {
-            // Try primary CORS proxy
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
-            let response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                // Try alternative proxy
-                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
-                response = await fetch(proxyUrl);
-            }
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            let html;
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const data = await response.json();
-                html = data.contents;
-            } else {
-                html = await response.text();
-            }
-            
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            
-            // Find contentp div
-            const contentpDiv = doc.querySelector('div.contentp');
-            
-            if (contentpDiv && this.isValidLyrics(contentpDiv)) {
-                // Clone the div to avoid modifying original
-                const clonedDiv = contentpDiv.cloneNode(true);
-                
-                let lyricsHtml = '';
-                let lyricsText = '';
-                
-                // Pattern 1: Check if it has exactly one div inside and br tags
-                const innerDivs = clonedDiv.querySelectorAll(':scope > div');
-                const brTags = clonedDiv.querySelectorAll('br');
-                const textContent = clonedDiv.textContent || clonedDiv.innerText;
-                
-                // Try Pattern 1 first
-                if (innerDivs.length === 1 && brTags.length > 0 && textContent && textContent.trim().length >= 10) {
-                    // Pattern 1: One div + br tags
-                    // Remove the first div (song title) - it's not part of lyrics
-                    const firstDiv = clonedDiv.querySelector(':scope > div');
-                    if (firstDiv) {
-                        firstDiv.remove();
-                    }
-                    
-                    // Extract lyrics text (without the first div)
-                    lyricsHtml = clonedDiv.innerHTML;
-                    lyricsText = clonedDiv.textContent || clonedDiv.innerText;
-                } else {
-                    // Pattern 2: Find point where only br and text remain
-                    const children = Array.from(clonedDiv.childNodes);
-                    let lastNonBrTextIndex = -1;
-                    
-                    // Find the last element that is not br or text
-                    for (let i = 0; i < children.length; i++) {
-                        const node = children[i];
-                        
-                        // Skip whitespace text nodes
-                        if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) {
-                            continue;
-                        }
-                        
-                        // If we find a non-text, non-br element, mark its position
-                        if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR') {
-                            lastNonBrTextIndex = i;
-                        }
-                    }
-                    
-                    // If we found a last non-br/text element, extract everything after it
-                    if (lastNonBrTextIndex !== -1 && lastNonBrTextIndex < children.length - 1) {
-                        const lyricsNodes = children.slice(lastNonBrTextIndex + 1);
-                        
-                        // Check if all remaining nodes are only br and text
-                        const hasOnlyBrAndText = lyricsNodes.every(n => {
-                            if (n.nodeType === Node.TEXT_NODE) return true;
-                            if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') return true;
-                            return false;
-                        });
-                        
-                        if (hasOnlyBrAndText) {
-                            // Build HTML from lyrics nodes
-                            lyricsHtml = lyricsNodes.map(n => {
-                                if (n.nodeType === Node.TEXT_NODE) {
-                                    // Escape HTML in text nodes
-                                    return n.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                                } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'BR') {
-                                    return '<br>';
-                                }
-                                return '';
-                            }).join('');
-                            
-                            // Build text from lyrics nodes
-                            lyricsText = lyricsNodes
-                                .filter(n => n.nodeType === Node.TEXT_NODE)
-                                .map(n => n.textContent)
-                                .join(' ')
-                                .trim();
-                        }
-                    }
-                }
-                
-                // Verify we have valid lyrics before processing
-                if (!lyricsHtml || !lyricsText || lyricsText.trim().length < 10) {
-                    // No valid lyrics found - only set state if still current track
-                    if (this.currentTrackId === trackId) {
-                        this.currentTrackLyrics = null;
-                        this.setLyricsState('notfound');
-                    }
-                    return;
-                }
-                
-                // Clean up HTML: remove extra br tags and normalize spacing
-                // Remove multiple consecutive br tags (more than 2)
-                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
-                
-                // Remove br tags at the beginning and end
-                lyricsHtml = lyricsHtml.replace(/^(<br\s*\/?>)+/gi, '');
-                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>)+$/gi, '');
-                
-                // Replace single br with line break for better formatting
-                lyricsHtml = lyricsHtml.replace(/(<br\s*\/?>)/gi, '<br>');
-                
-                // Clean up extra whitespace
-                lyricsHtml = lyricsHtml.trim();
-                lyricsText = lyricsText.trim();
-                
-                // Verify this is still the current track before setting lyrics
-                if (this.currentTrackId !== trackId) {
-                    console.log('Track changed during extraction, ignoring lyrics');
-                    return;
-                }
-                
-                const lyricsData = {
-                    html: lyricsHtml,
-                    text: lyricsText
-                };
-                
-                // Save to cache
-                this.lyricsCache[pageUrl] = lyricsData;
-                this.saveLyricsCache();
-                
-                // Only set lyrics if this is still the current track
-                if (this.currentTrackId === trackId) {
-                    this.currentTrackLyrics = lyricsData;
-                    // Set found state
-                    this.setLyricsState('found');
-                    console.log('✅ Lyrics extracted and cached successfully for:', track.title);
-                } else {
-                    console.log('Track changed after extraction, ignoring lyrics');
-                }
-            } else {
-                // No valid lyrics found - only set state if still current track
-                if (this.currentTrackId === trackId) {
-                    this.currentTrackLyrics = null;
-                    this.setLyricsState('notfound');
-                }
-            }
-        } catch (error) {
-            console.warn('Failed to extract lyrics:', error);
-            // Only set error state if still current track
-            if (this.currentTrackId === trackId) {
-                this.currentTrackLyrics = null;
-                this.setLyricsState('error');
-            }
-        }
-    }
-
-    // Show lyrics page
-    showLyrics() {
-        // Get current track
-        const currentTrack = this.playlist[this.currentIndex];
-        if (!currentTrack) {
-            this.showError('آهنگ یافت نشد');
-            return;
-        }
-        
-        // Update lyrics title
-        if (this.lyricsTitle) {
-            this.lyricsTitle.textContent = `${currentTrack.title} - ${currentTrack.artist}`;
-        }
-        
-        // Use pageUrl for comparison (more reliable than id)
-        const currentPageUrl = currentTrack.pageUrl || null;
-        const currentTrackId = currentTrack.id || currentTrack.url || currentTrack.pageUrl;
-        
-        // Check if lyrics match by pageUrl (more reliable) or trackId
-        const lyricsMatch = (this.currentTrackPageUrl && this.currentTrackPageUrl === currentPageUrl) ||
-                           (this.currentTrackId && this.currentTrackId === currentTrackId);
-        
-        // Navigate to lyrics page first
-        this.navigateToPage('lyrics');
-        
-        // Update refresh button visibility
-        this.updateRefreshLyricsButton();
-        
-        // Check if we have lyrics for this track
-        if (lyricsMatch && this.currentTrackLyrics) {
-            // Display lyrics
-            if (this.lyricsText) {
-                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
-            }
-        } else {
-            // No lyrics found - show message but keep page open
-            if (this.lyricsText) {
-                if (this.lyricsState === 'loading') {
-                    this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
-                } else if (this.lyricsState === 'notfound') {
-                    this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
-                } else if (this.lyricsState === 'error') {
-                    this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
-                } else {
-                    this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
-                }
-            }
-            
-            // If pageUrl exists, try to extract lyrics (only if not already loading)
-            if (currentTrack.pageUrl && this.lyricsState !== 'loading' && this.lyricsState !== 'notfound') {
-                console.log('No lyrics found, attempting to extract for:', currentTrack.title);
-                this.extractLyrics(currentTrack.pageUrl, currentTrack).then(() => {
-                    // Update display after extraction
-                    this.updateLyricsDisplay();
-                });
-            }
-        }
-    }
-
-    // Update lyrics display when track changes while on lyrics page
-    updateLyricsDisplay() {
-        const currentTrack = this.playlist[this.currentIndex];
-        if (!currentTrack) {
-            return;
-        }
-        
-        const currentTrackId = currentTrack.id || currentTrack.url || currentTrack.pageUrl;
-        
-        // Update title
-        if (this.lyricsTitle) {
-            this.lyricsTitle.textContent = `${currentTrack.title} - ${currentTrack.artist}`;
-        }
-        
-        // Update refresh button visibility
-        this.updateRefreshLyricsButton();
-        
-        // Check if lyrics are available for current track
-        if (this.currentTrackLyrics && this.currentTrackId === currentTrackId) {
-            // Update lyrics display
-            if (this.lyricsText) {
-                this.lyricsText.innerHTML = this.currentTrackLyrics.html;
-            }
-        } else if (this.lyricsState === 'loading') {
-            // Still loading, show loading state
-            if (this.lyricsText) {
-                this.lyricsText.innerHTML = '<div class="loading"><div class="spinner"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
-            }
-        } else if (this.lyricsState === 'notfound') {
-            // Lyrics not found
-            if (this.lyricsText) {
-                this.lyricsText.innerHTML = '<p class="empty-state">متن آهنگ برای این آهنگ یافت نشد</p>';
-            }
-        } else if (this.lyricsState === 'error') {
-            // Error occurred
-            if (this.lyricsText) {
-                this.lyricsText.innerHTML = '<p class="empty-state">خطا در بارگذاری متن آهنگ</p>';
-            }
-        } else {
-            // Wait a bit and check again
-            setTimeout(() => {
-                this.updateLyricsDisplay();
-            }, 500);
-        }
-    }
-
-    setupMediaSession() {
-        // Check if Media Session API is supported
-        if (!('mediaSession' in navigator)) {
-            console.log('Media Session API not supported');
-            return;
-        }
-
-        // Set up action handlers for Bluetooth/remote controls
-        navigator.mediaSession.setActionHandler('play', () => {
-            console.log('Media Session: play action');
-            if (this.audioPlayer.paused) {
-                if (this.currentIndex === -1 && this.playlist.length > 0) {
-                    this.currentIndex = 0;
-                    this.loadAndPlay(this.playlist[0]);
-                } else {
-                    this.audioPlayer.play();
-                }
-                this.updatePlayButton();
-            }
-        });
-
-        navigator.mediaSession.setActionHandler('pause', () => {
-            console.log('Media Session: pause action');
-            if (!this.audioPlayer.paused) {
-                this.audioPlayer.pause();
-                this.updatePlayButton();
-            }
-        });
-
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-            console.log('Media Session: previous track action');
-            this.handlePreviousTrackButton();
-        });
-
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-            console.log('Media Session: next track action');
-            this.handleNextTrackButton();
-        });
-
-        // Seek backward (holding previous button)
-        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-            console.log('Media Session: seek backward', details);
-            this.handleSeekBackward(details);
-        });
-
-        // Seek forward (holding next button)
-        navigator.mediaSession.setActionHandler('seekforward', (details) => {
-            console.log('Media Session: seek forward', details);
-            this.handleSeekForward(details);
-        });
-
-        console.log('Media Session API initialized');
-    }
-
-    updateMediaSessionMetadata(track) {
-        // Check if Media Session API is supported
-        if (!('mediaSession' in navigator)) {
-            return;
-        }
-
-        if (!track) {
-            navigator.mediaSession.metadata = null;
-            return;
-        }
-
-        // Update metadata for Bluetooth/remote controls
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: track.title || '-',
-            artist: track.artist || '-',
-            album: track.album || '',
-            artwork: [
-                {
-                    src: track.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E',
-                    sizes: '512x512',
-                    type: 'image/png'
-                }
-            ]
-        });
-
-        // Update playback state
-        this.updateMediaSessionPlaybackState();
-    }
-
-    updateMediaSessionPlaybackState() {
-        if (!('mediaSession' in navigator)) {
-            return;
-        }
-
-        // Update playback state for Media Session
-        if (this.audioPlayer.paused) {
-            navigator.mediaSession.playbackState = 'paused';
-        } else {
-            navigator.mediaSession.playbackState = 'playing';
-        }
-    }
-
-    handlePreviousTrackButton() {
-        const now = Date.now();
-        
-        // Check if button is being held (called repeatedly within 500ms)
-        if (this.lastPreviousTrackTime && (now - this.lastPreviousTrackTime) < 500) {
-            // Button is being held - start seeking backward
-            console.log('Previous button held - seeking backward');
-            if (!this.isHoldingPrevious) {
-                this.isHoldingPrevious = true;
-                this.isSeekingBackward = true;
-                this.startSeekingBackward();
-            }
-            
-            // Immediately seek back 3 seconds
-            const skipTime = 3;
-            const newTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
-            this.audioPlayer.currentTime = newTime;
-            
-            // Reset timeout
-            if (this.previousTrackTimeout) {
-                clearTimeout(this.previousTrackTimeout);
-            }
-            this.previousTrackTimeout = setTimeout(() => {
-                console.log('Previous button released - stopping seek');
-                this.isHoldingPrevious = false;
-                this.stopSeeking();
-            }, 500);
-            
-            this.lastPreviousTrackTime = now;
-            return;
-        }
-        
-        // Single press - check if less than 3 seconds have passed since track started
-        this.lastPreviousTrackTime = now;
-        const timeSinceTrackStart = this.trackStartTime ? (now - this.trackStartTime) / 1000 : Infinity;
-        
-        if (timeSinceTrackStart < 3) {
-            // Less than 3 seconds: go to previous track
-            console.log('Less than 3 seconds since track start: going to previous track');
-            this.playPrevious();
-        } else {
-            // More than 3 seconds: restart current track
-            console.log('More than 3 seconds since track start: restarting current track');
-            if (this.currentIndex >= 0 && this.playlist.length > 0) {
-                this.audioPlayer.currentTime = 0;
-                this.trackStartTime = Date.now(); // Reset start time
-                if (this.audioPlayer.paused) {
-                    this.audioPlayer.play();
-                    this.updatePlayButton();
-                }
-            }
-        }
-        
-        // Set timeout to detect if button is held
-        if (this.previousTrackTimeout) {
-            clearTimeout(this.previousTrackTimeout);
-        }
-        this.previousTrackTimeout = setTimeout(() => {
-            // No more presses - single press confirmed
-            this.lastPreviousTrackTime = null;
-        }, 500);
-    }
-
-    handleNextTrackButton() {
-        const now = Date.now();
-        
-        // Check if button is being held (called repeatedly within 500ms)
-        if (this.lastNextTrackTime && (now - this.lastNextTrackTime) < 500) {
-            // Button is being held - start seeking forward
-            console.log('Next button held - seeking forward');
-            if (!this.isHoldingNext) {
-                this.isHoldingNext = true;
-                this.isSeekingForward = true;
-                this.startSeekingForward();
-            }
-            
-            // Immediately seek forward 3 seconds
-            const skipTime = 3;
-            const newTime = Math.min(
-                this.audioPlayer.duration || Infinity,
-                this.audioPlayer.currentTime + skipTime
-            );
-            this.audioPlayer.currentTime = newTime;
-            
-            // Reset timeout
-            if (this.nextTrackTimeout) {
-                clearTimeout(this.nextTrackTimeout);
-            }
-            this.nextTrackTimeout = setTimeout(() => {
-                console.log('Next button released - stopping seek');
-                this.isHoldingNext = false;
-                this.stopSeeking();
-            }, 500);
-            
-            this.lastNextTrackTime = now;
-            return;
-        }
-        
-        // Single press - play next track
-        this.lastNextTrackTime = now;
-        console.log('Single next press - playing next track');
-        this.playNext();
-        
-        // Set timeout to detect if button is held
-        if (this.nextTrackTimeout) {
-            clearTimeout(this.nextTrackTimeout);
-        }
-        this.nextTrackTimeout = setTimeout(() => {
-            // No more presses - single press confirmed
-            this.lastNextTrackTime = null;
-        }, 500);
-    }
-
-    handlePreviousTrack() {
-        // This is kept for backward compatibility but now uses handlePreviousTrackButton
-        this.handlePreviousTrackButton();
-    }
-
-    handleSeekBackward(details) {
-        console.log('Media Session: seek backward', details);
-        
-        // Immediately seek back 3 seconds
-        const skipTime = 3;
-        const newTime = Math.max(0, this.audioPlayer.currentTime - skipTime);
-        this.audioPlayer.currentTime = newTime;
-        
-        // When button is held, seekbackward is called repeatedly
-        // Start continuous seeking if not already started
-        if (!this.isSeekingBackward) {
-            this.isSeekingBackward = true;
-            this.seekBackwardStartTime = Date.now();
-            this.startSeekingBackward();
-        }
-        
-        // Reset timeout - if no more seeks come, stop seeking
-        // Use longer timeout to allow for button holding
-        if (this.seekBackwardTimeout) {
-            clearTimeout(this.seekBackwardTimeout);
-        }
-        this.seekBackwardTimeout = setTimeout(() => {
-            console.log('No more seek backward events, stopping');
-            this.stopSeeking();
-        }, 500); // Stop if no seek for 500ms
-    }
-
-    handleSeekForward(details) {
-        console.log('Media Session: seek forward', details);
-        
-        // Immediately seek forward 3 seconds
-        const skipTime = 3;
-        const newTime = Math.min(
-            this.audioPlayer.duration || Infinity,
-            this.audioPlayer.currentTime + skipTime
-        );
-        this.audioPlayer.currentTime = newTime;
-        
-        // When button is held, seekforward is called repeatedly
-        // Start continuous seeking if not already started
-        if (!this.isSeekingForward) {
-            this.isSeekingForward = true;
-            this.seekForwardStartTime = Date.now();
-            this.startSeekingForward();
-        }
-        
-        // Reset timeout - if no more seeks come, stop seeking
-        // Use longer timeout to allow for button holding
-        if (this.seekForwardTimeout) {
-            clearTimeout(this.seekForwardTimeout);
-        }
-        this.seekForwardTimeout = setTimeout(() => {
-            console.log('No more seek forward events, stopping');
-            this.stopSeeking();
-        }, 500); // Stop if no seek for 500ms
-    }
-
-    startSeekingBackward() {
-        console.log('Starting backward seek interval');
-        // Clear any existing interval
-        if (this.seekInterval) {
-            clearInterval(this.seekInterval);
-        }
-        
-        // Seek backward 3 seconds every second while button is held
-        this.seekInterval = setInterval(() => {
-            if (this.isSeekingBackward) {
-                const currentTime = this.audioPlayer.currentTime;
-                const newTime = Math.max(0, currentTime - 3);
-                this.audioPlayer.currentTime = newTime;
-                console.log('Seeking backward:', currentTime, '->', newTime);
-            } else {
-                console.log('Stopping backward seek (flag is false)');
-                this.stopSeeking();
-            }
-        }, 1000); // Every 1 second
-    }
-
-    startSeekingForward() {
-        console.log('Starting forward seek interval');
-        // Clear any existing interval
-        if (this.seekInterval) {
-            clearInterval(this.seekInterval);
-        }
-        
-        // Seek forward 3 seconds every second while button is held
-        this.seekInterval = setInterval(() => {
-            if (this.isSeekingForward) {
-                const currentTime = this.audioPlayer.currentTime;
-                const newTime = Math.min(
-                    this.audioPlayer.duration || Infinity,
-                    currentTime + 3
-                );
-                this.audioPlayer.currentTime = newTime;
-                console.log('Seeking forward:', currentTime, '->', newTime);
-            } else {
-                console.log('Stopping forward seek (flag is false)');
-                this.stopSeeking();
-            }
-        }, 1000); // Every 1 second
-    }
-
-    stopSeeking() {
-        console.log('Stopping seek, isSeekingBackward:', this.isSeekingBackward, 'isSeekingForward:', this.isSeekingForward);
-        this.isSeekingBackward = false;
-        this.isSeekingForward = false;
-        this.isHoldingPrevious = false;
-        this.isHoldingNext = false;
-        this.seekBackwardStartTime = null;
-        this.seekForwardStartTime = null;
-        if (this.seekInterval) {
-            clearInterval(this.seekInterval);
-            this.seekInterval = null;
-            console.log('Seek interval cleared');
-        }
-        if (this.seekBackwardTimeout) {
-            clearTimeout(this.seekBackwardTimeout);
-            this.seekBackwardTimeout = null;
-        }
-        if (this.seekForwardTimeout) {
-            clearTimeout(this.seekForwardTimeout);
-            this.seekForwardTimeout = null;
-        }
-    }
-
     togglePlayPause() {
         if (this.audioPlayer.paused) {
             if (this.currentIndex === -1 && this.playlist.length > 0) {
@@ -2268,7 +2158,6 @@ class MusicPlayer {
             this.audioPlayer.pause();
         }
         this.updatePlayButton();
-        this.updateMediaSessionPlaybackState();
     }
 
     playNext() {
@@ -2306,11 +2195,6 @@ class MusicPlayer {
 
         // Continue playing next track
         this.loadAndPlay(this.playlist[this.currentIndex]);
-        
-        // If we're on lyrics page, update lyrics display after a delay
-        if (this.currentPage === 'lyrics') {
-            setTimeout(() => this.updateLyricsDisplay(), 500);
-        }
     }
 
     playPrevious() {
@@ -2330,11 +2214,6 @@ class MusicPlayer {
         }
 
         this.loadAndPlay(this.playlist[this.currentIndex]);
-        
-        // If we're on lyrics page, update lyrics display
-        if (this.currentPage === 'lyrics') {
-            this.updateLyricsDisplay();
-        }
     }
 
     toggleShuffle() {
@@ -2463,104 +2342,21 @@ class MusicPlayer {
     }
 
     async cacheAudio(audioUrl) {
-        // Cache audio file directly using Cache API
-        if (!('serviceWorker' in navigator && 'caches' in window)) {
-            return false;
-        }
-        
-        try {
-            const cache = await caches.open('mytehran-audio-v1');
-            // Check if already cached
-            const cached = await cache.match(audioUrl);
-            if (cached) {
-                console.log('✅ Cache: Audio already cached -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
-                return true; // Already cached
-            }
-            
-            // Not cached yet - Service Worker will cache it when audio element loads it
-            // Don't try to fetch with CORS as it causes 503 errors
-            // The audio element loads without CORS, and Service Worker intercepts and caches it
-            console.log('⬇️ Cache: Audio not cached yet - Service Worker will cache it when audio plays');
-            console.log('   File:', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
-            
-            // Service Worker will automatically cache when audio element loads the file
-            // Check cache status after delays to see if Service Worker cached it
-            const checkCacheStatus = async (delay, attempt) => {
-                await new Promise(resolve => setTimeout(resolve, delay));
-                try {
-                    const cacheCheck = await caches.open('mytehran-audio-v1');
-                    const cachedAfterDelay = await cacheCheck.match(audioUrl);
-                    if (cachedAfterDelay) {
-                        console.log('✅ Cache: Audio cached successfully by Service Worker -', audioUrl.substring(audioUrl.lastIndexOf('/') + 1));
-                        return true;
-                    } else if (attempt < 3) {
-                        // Try again with longer delay
-                        return false;
-                    }
-                } catch (e) {
-                    // Ignore
+        // Cache audio file using Service Worker
+        if ('serviceWorker' in navigator && 'caches' in window) {
+            try {
+                const cache = await caches.open('mytehran-audio-v1');
+                // Check if already cached
+                const cached = await cache.match(audioUrl);
+                if (!cached) {
+                    // Fetch and cache the audio
+                    await cache.add(audioUrl);
+                    console.log('Audio cached:', audioUrl);
                 }
-                return false;
-            };
-            
-            // Check after 2, 5, and 10 seconds
-            checkCacheStatus(2000, 1);
-            checkCacheStatus(5000, 2);
-            checkCacheStatus(10000, 3);
-            
-            return false;
-        } catch (error) {
-            // Silently fail - caching is optional
-            return false;
-        }
-    }
-
-    // Check if audio is cached
-    async isAudioCached(audioUrl) {
-        if (!('serviceWorker' in navigator && 'caches' in window)) {
-            return false;
-        }
-        
-        try {
-            const cache = await caches.open('mytehran-audio-v1');
-            const cached = await cache.match(audioUrl);
-            return !!cached;
-        } catch (error) {
-            return false;
-        }
-    }
-
-    // Get all cached audio URLs (for debugging)
-    async getCachedAudioList() {
-        if (!('serviceWorker' in navigator && 'caches' in window)) {
-            console.log('Cache: Service Worker not available');
-            return [];
-        }
-        
-        try {
-            const cache = await caches.open('mytehran-audio-v1');
-            const keys = await cache.keys();
-            const urls = keys.map(request => request.url);
-            console.log('📦 Cached audio files (' + urls.length + '):');
-            urls.forEach((url, index) => {
-                const fileName = url.substring(url.lastIndexOf('/') + 1);
-                console.log(`  ${index + 1}. ${fileName}`);
-            });
-            return urls;
-        } catch (error) {
-            console.error('Error getting cached audio list:', error);
-            return [];
-        }
-    }
-
-    // Show cache helper in console
-    showCacheHelper() {
-        if (window.musicPlayer && typeof window.musicPlayer.getCachedAudioList === 'function') {
-            console.log('%c📦 Cache Helper', 'color: #4CAF50; font-weight: bold; font-size: 14px;');
-            console.log('Use these commands in console to check cache status:');
-            console.log('  • musicPlayer.getCachedAudioList() - List all cached audio files');
-            console.log('  • musicPlayer.isAudioCached("URL") - Check if specific audio is cached');
-            console.log('  Example: musicPlayer.isAudioCached(musicPlayer.playlist[0].url)');
+            } catch (error) {
+                console.warn('Failed to cache audio:', error);
+                // Don't show error to user, caching is optional
+            }
         }
     }
 
@@ -3249,8 +3045,21 @@ class MusicPlayer {
     }
 
     navigateToPage(page) {
-        console.log('Navigating to page:', page);
+        console.log('Navigating to page:', page, 'from:', this.currentPage);
         console.log('Available pages:', this.pages);
+        
+        // Prevent navigation to the same page
+        if (this.currentPage === page && page !== 'player') {
+            console.log('Already on page:', page);
+            return;
+        }
+        
+        // Save current page as previous before navigating (except for player page)
+        // Only update previousPage if we're not going to player page
+        // and current page is not player (to avoid loops)
+        if (this.currentPage && this.currentPage !== 'player' && page !== 'player') {
+            this.previousPage = this.currentPage;
+        }
         
         // Hide all pages first (force hide with !important via inline style)
         Object.values(this.pages).forEach(p => {
@@ -3290,8 +3099,8 @@ class MusicPlayer {
             }
         }
         
-        // Activate nav item
-        if (this.navItems && this.navItems.length > 0) {
+        // Activate nav item (only for main pages, not player)
+        if (this.navItems && this.navItems.length > 0 && page !== 'player') {
             const navItem = Array.from(this.navItems).find(item => item.dataset.page === page);
             if (navItem) {
                 navItem.classList.add('active');

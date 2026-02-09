@@ -9,15 +9,15 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTMgMTRoM2EyIDIgMCAwIDAgMi0yVjZhMiAyIDAgMCAwLTItMkg1YTIgMiAwIDAgMC0yIDJ2NmEyIDIgMCAwIDAgMiAyeiIvPjxwYXRoIGQ9Ik0yMSAxNGgzYTIgMiAwIDAgMSAyLTJWNmEyIDIgMCAwIDEtMi0yaC0zYTIgMiAwIDAgMS0yIDJ2NmEyIDIgMCAwIDEgMiAyeiIvPjxwYXRoIGQ9Ik02IDE0djRhMiAyIDAgMCAwIDIgMmg4YTIgMiAwIDAgMCAyLTJ2LTQiLz48L3N2Zz4=",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTMgMTRoM2EyIDIgMCAwIDAgMi0yVjZhMiAyIDAgMCAwLTItMkg1YTIgMiAwIDAgMC0yIDJ2NmEyIDIgMCAwIDAgMiAyeiIvPjxwYXRoIGQ9Ik0yMSAxNGgzYTIgMiAwIDAgMSAyLTJWNmEyIDIgMCAwIDEtMi0yaC0zYTIgMiAwIDAgMS0yIDJ2NmEyIDIgMCAwIDEgMiAyeiIvPjxwYXRoIGQ9Ik02IDE0djRhMiAyIDAgMCAwIDIgMmg4YTIgMiAwIDAgMCAyLTJ2LTQiLz48L3N2Zz4=",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],
