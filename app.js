@@ -40,10 +40,36 @@ class MusicPlayer {
         this.pages = {
             home: document.getElementById('homePage'),
             search: document.getElementById('searchPage'),
+            explore: document.getElementById('explorePage'),
             playlists: document.getElementById('playlistsPage'),
             player: document.getElementById('playerPage'),
-            lyrics: document.getElementById('lyricsPage')
+            lyrics: document.getElementById('lyricsPage'),
+            exploreDetail: document.getElementById('exploreDetailPage')
         };
+        
+        // Explore Page
+        this.latestTracksList = document.getElementById('latestTracksList');
+        this.topMonthlyList = document.getElementById('topMonthlyList');
+        this.podcastsList = document.getElementById('podcastsList');
+        this.exploreDetailContainer = document.getElementById('exploreDetailContainer');
+        this.exploreDetailTitle = document.getElementById('exploreDetailTitle');
+        this.exploreDetailInfiniteLoader = document.getElementById('exploreDetailInfiniteLoader');
+        this.exploreDetailLoadingIndicator = document.getElementById('exploreDetailLoadingIndicator');
+        this.exploreDetailScrollToTopBtn = document.getElementById('exploreDetailScrollToTopBtn');
+        this.backFromExploreDetailBtn = document.getElementById('backFromExploreDetailBtn');
+        
+        // Setup scroll to top button for explore detail page
+        if (this.exploreDetailScrollToTopBtn) {
+            this.exploreDetailScrollToTopBtn.addEventListener('click', () => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        }
+        this.currentExploreType = null;
+        this.currentExplorePage = 1;
+        this.exploreHasMore = false;
+        this.exploreLoading = false;
+        this.exploreCache = {};
+        this.loadExploreCache();
         
         // Search
         this.searchInput = document.getElementById('searchInputMain');
@@ -125,6 +151,25 @@ class MusicPlayer {
         this.searchResultsMain = document.getElementById('searchResultsMain');
         this.resultsContainerMain = document.getElementById('resultsContainerMain');
         this.searchLoadingIndicator = document.getElementById('searchLoadingIndicator');
+        this.searchScrollToTopBtn = document.getElementById('searchScrollToTopBtn');
+        
+        // Setup scroll to top button for search page
+        if (this.searchScrollToTopBtn) {
+            this.searchScrollToTopBtn.addEventListener('click', () => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            
+            // Show/hide button based on scroll position
+            this.searchScrollHandler = () => {
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                if (this.currentPage === 'search' && scrollTop > 300) {
+                    this.searchScrollToTopBtn.style.display = 'flex';
+                } else {
+                    this.searchScrollToTopBtn.style.display = 'none';
+                }
+            };
+            window.addEventListener('scroll', this.searchScrollHandler);
+        }
         
         // Playlists Page
         this.playlistsListMain = document.getElementById('playlistsListMain');
@@ -203,6 +248,11 @@ class MusicPlayer {
         }
         if (this.refreshLyricsBtn) {
             this.refreshLyricsBtn.addEventListener('click', () => this.handleRefreshLyrics());
+        }
+        if (this.backFromExploreDetailBtn) {
+            this.backFromExploreDetailBtn.addEventListener('click', () => {
+                this.navigateToPage('explore');
+            });
         }
 
         // Playlist controls
@@ -797,6 +847,14 @@ class MusicPlayer {
         }
         
         div.dataset.trackId = track.id;
+        // Store track data for explore items
+        if (source === 'explore') {
+            div.dataset.trackTitle = track.title || '';
+            div.dataset.trackArtist = track.artist || '';
+            div.dataset.trackImage = track.image || '';
+            div.dataset.trackUrl = track.url || '';
+            div.dataset.trackPageUrl = track.pageUrl || '';
+        }
 
         // Check if this track is currently playing
         const isCurrentlyPlaying = source !== 'results' && 
@@ -850,7 +908,19 @@ class MusicPlayer {
                     <p>${this.escapeHtml(track.artist)}</p>
                 </div>
                 <div class="track-actions">
-                    ${source === 'results' ? 
+                    ${source === 'playlist' ? 
+                        // For playlist page, show play and remove buttons
+                        `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                         </button>
+                         <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                         </button>` :
+                        // For results, explore, home, and other sources: show play, add-to-custom, and favorite buttons
                         `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M8 5v14l11-7z"/>
@@ -864,16 +934,6 @@ class MusicPlayer {
                          <button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
                             <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
                                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                            </svg>
-                         </button>` :
-                        `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                         </button>
-                         <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                             </svg>
                          </button>`
                     }
@@ -901,7 +961,12 @@ class MusicPlayer {
                 }
                 
                 if (action === 'toggle-favorite') {
-                    this.toggleFavorite(trackId);
+                    // For explore tracks, use track object directly
+                    if (source === 'explore' && track) {
+                        this.toggleFavoriteByTrack(track);
+                    } else {
+                        this.toggleFavorite(trackId);
+                    }
                     // Update the heart icon in the UI
                     const heartBtn = div.querySelector('.btn-favorite');
                     const heartIcon = div.querySelector('.heart-icon');
@@ -916,7 +981,40 @@ class MusicPlayer {
                         heartIcon.setAttribute('fill', 'none');
                     }
                 } else if (action === 'add-to-custom') {
-                    this.showAddToPlaylistDialog(trackId);
+                    // Find track from different sources
+                    let trackToAdd = null;
+                    if (source === 'results') {
+                        trackToAdd = this.searchResults.find(t => t.id === trackId);
+                    } else if (source === 'explore' || source === 'home') {
+                        // For explore and home, use the track object passed to createTrackElement
+                        trackToAdd = track;
+                    }
+                    
+                    if (trackToAdd) {
+                        this.showAddToPlaylistDialogByTrack(trackToAdd);
+                    } else {
+                        console.warn('Track not found for add-to-custom:', trackId, 'source:', source);
+                        // Try to reconstruct track from DOM as fallback for explore
+                        if (source === 'explore') {
+                            const trackTitle = div.dataset.trackTitle;
+                            const trackArtist = div.dataset.trackArtist;
+                            const trackImage = div.dataset.trackImage;
+                            const trackUrl = div.dataset.trackUrl;
+                            const trackPageUrl = div.dataset.trackPageUrl;
+                            
+                            if (trackTitle && trackArtist) {
+                                trackToAdd = {
+                                    id: trackId,
+                                    title: trackTitle,
+                                    artist: trackArtist,
+                                    image: trackImage,
+                                    url: trackUrl,
+                                    pageUrl: trackPageUrl
+                                };
+                                this.showAddToPlaylistDialogByTrack(trackToAdd);
+                            }
+                        }
+                    }
                 } else if (action === 'play') {
                     if (source === 'playlist-detail') {
                         // Find track index in current playlist
@@ -1884,12 +1982,59 @@ class MusicPlayer {
             if (track && !this.playlist.find(t => t.id === trackId)) {
                 this.playlist.push({...track});
             }
+        } else if (source === 'explore') {
+            // Playing from explore page - find track in DOM
+            const trackElement = document.querySelector(`[data-track-id="${trackId}"]`);
+            if (trackElement) {
+                // Try to find track in explore detail container or explore lists
+                const exploreDetailContainer = document.getElementById('exploreDetailContainer');
+                const latestTracksList = document.getElementById('latestTracksList');
+                const topMonthlyList = document.getElementById('topMonthlyList');
+                const podcastsList = document.getElementById('podcastsList');
+                
+                // Search in all explore containers
+                let foundTrack = null;
+                const allContainers = [exploreDetailContainer, latestTracksList, topMonthlyList, podcastsList].filter(Boolean);
+                
+                for (const container of allContainers) {
+                    const item = container.querySelector(`[data-track-id="${trackId}"]`);
+                    if (item) {
+                        // Extract track data from the DOM element
+                        const titleEl = item.querySelector('.track-info h4');
+                        const artistEl = item.querySelector('.track-info p');
+                        const imageEl = item.querySelector('.track-image img');
+                        
+                        if (titleEl && artistEl) {
+                            foundTrack = {
+                                id: trackId,
+                                title: titleEl.textContent,
+                                artist: artistEl.textContent,
+                                image: imageEl ? imageEl.src : '',
+                                url: item.dataset.trackUrl || '',
+                                pageUrl: item.dataset.pageUrl || ''
+                            };
+                            break;
+                        }
+                    }
+                }
+                
+                if (foundTrack) {
+                    track = foundTrack;
+                    // Add to playlist if not already there
+                    if (!this.playlist.find(t => t.id === trackId)) {
+                        this.playlist.push({...track});
+                    }
+                }
+            }
         } else {
             // Playing from current playlist
             track = this.playlist.find(t => t.id === trackId);
         }
         
-        if (!track) return;
+        if (!track) {
+            console.warn('Track not found:', trackId, 'source:', source);
+            return;
+        }
 
         this.currentIndex = this.playlist.findIndex(t => t.id === trackId);
         this.loadAndPlay(track);
@@ -2620,6 +2765,9 @@ class MusicPlayer {
             }
         });
         
+        // Scroll to top of page when opening playlist detail
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        
         // Show playlist detail page
         if (this.playlistDetailPage) {
             this.playlistDetailPage.classList.add('active');
@@ -3077,10 +3225,20 @@ class MusicPlayer {
             this.playlistDetailPage.style.visibility = 'hidden';
         }
         
+        // Hide exploreDetailPage if navigating away from it
+        if (page !== 'exploreDetail' && this.pages.exploreDetail) {
+            this.pages.exploreDetail.classList.remove('active');
+            this.pages.exploreDetail.style.display = 'none';
+            this.pages.exploreDetail.style.visibility = 'hidden';
+        }
+        
         // Remove active from all nav items
         if (this.navItems && this.navItems.length > 0) {
             this.navItems.forEach(item => item.classList.remove('active'));
         }
+        
+        // Scroll to top of page when navigating
+        window.scrollTo({ top: 0, behavior: 'instant' });
         
         // Show selected page
         if (this.pages[page]) {
@@ -3109,6 +3267,11 @@ class MusicPlayer {
         
         this.currentPage = page;
         
+        // Load explore data when navigating to explore page
+        if (page === 'explore') {
+            this.loadExploreData();
+        }
+        
         // Save current page to localStorage
         try {
             localStorage.setItem('mytehranCurrentPage', page);
@@ -3125,6 +3288,723 @@ class MusicPlayer {
         } else if (page === 'search') {
             // Ensure search history is displayed
             this.displaySearchHistory();
+        } else if (page === 'exploreDetail') {
+            // Handle explore detail page
+            if (this.currentExploreType) {
+                this.loadExploreDetail(this.currentExploreType, 1);
+            }
+        } else if (page !== 'exploreDetail') {
+            // Remove scroll listener when leaving explore detail page
+            if (this.exploreDetailScrollHandler) {
+                window.removeEventListener('scroll', this.exploreDetailScrollHandler);
+                this.exploreDetailScrollHandler = null;
+            }
+        }
+    }
+    
+    // Load explore page data
+    async loadExploreData() {
+        await Promise.all([
+            this.loadLatestTracks(),
+            this.loadTopMonthly(),
+            this.loadPodcasts()
+        ]);
+    }
+    
+    // Fetch and parse items from a URL with retry logic and multiple proxy fallbacks
+    async fetchExploreItems(url, limit = 5, retryCount = 0, maxRetries = 3) {
+        // List of CORS proxy services to try
+        const proxyServices = [
+            {
+                name: 'allorigins',
+                getUrl: (targetUrl) => `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+                parseResponse: async (response) => {
+                    if (response.headers.get('content-type')?.includes('application/json')) {
+                        const data = await response.json();
+                        return data.contents;
+                    }
+                    return await response.text();
+                }
+            },
+            {
+                name: 'corsproxy',
+                getUrl: (targetUrl) => `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+                parseResponse: async (response) => {
+                    if (response.headers.get('content-type')?.includes('application/json')) {
+                        const data = await response.json();
+                        return data.contents || data;
+                    }
+                    return await response.text();
+                }
+            },
+            {
+                name: 'cors-anywhere',
+                getUrl: (targetUrl) => `https://cors-anywhere.herokuapp.com/${targetUrl}`,
+                parseResponse: async (response) => await response.text()
+            },
+            {
+                name: 'proxy',
+                getUrl: (targetUrl) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+                parseResponse: async (response) => await response.text()
+            }
+        ];
+        
+        // Try each proxy service
+        for (let proxyIndex = 0; proxyIndex < proxyServices.length; proxyIndex++) {
+            const proxy = proxyServices[proxyIndex];
+            
+            try {
+                const proxyUrl = proxy.getUrl(url);
+                
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+                
+                const response = await fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    },
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    // If this is not the last proxy, try next one
+                    if (proxyIndex < proxyServices.length - 1) {
+                        continue;
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Parse response based on proxy type
+                const html = await proxy.parseResponse(response);
+                
+                if (!html || html.trim().length === 0) {
+                    // If this is not the last proxy, try next one
+                    if (proxyIndex < proxyServices.length - 1) {
+                        continue;
+                    }
+                    throw new Error('Empty response from proxy');
+                }
+                
+                const result = this.parseExploreItems(html, limit);
+                
+                // Cache result if limit is 5 (first 5 items)
+                if (limit === 5 && result.items.length > 0) {
+                    this.cacheExploreItems(url, result.items);
+                }
+                
+                return result;
+            } catch (error) {
+                // If this is the last proxy and we've tried all retries, throw
+                if (proxyIndex === proxyServices.length - 1 && retryCount >= maxRetries) {
+                    console.error(`All proxies failed for ${url}. Last error:`, error);
+                    return { items: [], hasMore: false };
+                }
+                
+                // If this is not the last proxy, try next one
+                if (proxyIndex < proxyServices.length - 1) {
+                    continue;
+                }
+                
+                // If all proxies failed in this attempt, retry with next attempt
+                if (retryCount < maxRetries) {
+                    console.warn(`Proxy ${proxy.name} failed (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+                    return this.fetchExploreItems(url, limit, retryCount + 1, maxRetries);
+                }
+            }
+        }
+        
+        // If we get here, all proxies failed
+        console.error(`All proxy services failed for ${url} after ${retryCount + 1} attempts`);
+        return { items: [], hasMore: false };
+    }
+    
+    // Parse items from HTML (similar to parseSearchResults)
+    parseExploreItems(html, limit = 5) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
+        
+        // Try multiple selectors for grid items
+        let gridItems = doc.querySelectorAll('div.grid-item');
+        
+        // Fallback: if no grid-item found, try other common selectors
+        if (gridItems.length === 0) {
+            gridItems = doc.querySelectorAll('article, .post-item, .item, [class*="grid"], [class*="item"]');
+        }
+        
+        // Additional fallback for top-month page: look for links with images
+        // Note: This fallback is handled in the second parsing section below
+        // We'll skip creating wrapper divs here as it's complex and error-prone
+        
+        gridItems.forEach((gridItem, index) => {
+            if (index >= limit) return; // Limit to first N items
+            
+            // Try multiple selectors for play button
+            let playButton = gridItem.querySelector('div.mcpplay');
+            if (!playButton) {
+                playButton = gridItem.querySelector('[data-music], [data-track], .play-button, [class*="play"]');
+            }
+            
+            // If still no play button, try to extract from the item itself
+            if (!playButton) {
+                // Check if the gridItem itself has data attributes
+                if (gridItem.hasAttribute('data-music') || gridItem.hasAttribute('data-track')) {
+                    playButton = gridItem;
+                }
+                // Don't skip - continue to extract info even without play button
+            }
+            
+            // Safely extract attributes from playButton (if it exists)
+            const trackTitle = playButton ? (playButton.getAttribute('data-track') || '') : '';
+            const artist = playButton ? (playButton.getAttribute('data-artist') || 'ناشناس') : 'ناشناس';
+            const imageUrl = playButton ? (playButton.getAttribute('data-image') || '') : '';
+            const musicUrl = playButton ? (playButton.getAttribute('data-music') || '') : '';
+            
+            let title = trackTitle;
+            let image = imageUrl;
+            let url = musicUrl;
+            let pageUrl = '';
+            
+            // Try multiple selectors for title
+            if (!title) {
+                let titleEl = gridItem.querySelector('div.title a, h2 a, h3 a, .title a, [class*="title"] a');
+                if (!titleEl) titleEl = gridItem.querySelector('div.title, h2, h3, .title, [class*="title"]');
+                if (titleEl) title = titleEl.textContent.trim();
+            }
+            
+            // Try multiple selectors for artist
+            let finalArtist = artist;
+            if (!finalArtist || finalArtist === 'ناشناس') {
+                let artistEl = gridItem.querySelector('div.artist a, .artist a, [class*="artist"] a');
+                if (!artistEl) artistEl = gridItem.querySelector('div.artist, .artist, [class*="artist"]');
+                if (artistEl) finalArtist = artistEl.textContent.trim();
+            }
+            
+            if (!image) {
+                let imgEl = gridItem.querySelector('div.img img, img[src*="timthumb"], img[src*="thumb"], .img img, [class*="img"] img, img');
+                if (imgEl) image = imgEl.src || imgEl.getAttribute('src') || imgEl.getAttribute('data-src') || '';
+            }
+            
+            // Try multiple selectors for page link
+            let pageLink = gridItem.querySelector('div.title a, div.img a, h2 a, h3 a, a[href*="/"]');
+            if (!pageLink) {
+                // Try to find any link in the item
+                pageLink = gridItem.querySelector('a[href]');
+            }
+            if (pageLink) {
+                pageUrl = pageLink.href || pageLink.getAttribute('href') || '';
+                if (pageUrl && !pageUrl.startsWith('http')) {
+                    pageUrl = `https://mytehranmusic.com${pageUrl}`;
+                }
+            }
+            
+            // If still no music URL, use pageUrl as fallback
+            if (!url && pageUrl) {
+                url = pageUrl;
+            }
+            
+            // Normalize URLs
+            if (image && !image.startsWith('http') && !image.startsWith('data:')) {
+                if (image.startsWith('//')) image = 'https:' + image;
+                else if (image.startsWith('/')) image = 'https://mytehranmusic.com' + image;
+                else image = 'https://mytehranmusic.com/' + image;
+            }
+            
+            if (url && !url.startsWith('http') && !url.startsWith('data:')) {
+                if (url.startsWith('//')) url = 'https:' + url;
+                else if (url.startsWith('/')) url = 'https://mytehranmusic.com' + url;
+                else url = 'https://mytehranmusic.com/' + url;
+            }
+            
+            // Accept items even without play button if they have title and URL
+            // This is important for top-month page which may not have play buttons
+            if (title && url) {
+                const trackData = {
+                    id: Date.now() + index,
+                    title: title.trim(),
+                    artist: finalArtist.trim() || 'ناشناس',
+                    url: url,
+                    image: image || '',
+                    pageUrl: pageUrl || url
+                };
+                results.push(trackData);
+            }
+        });
+        
+        // If we still don't have results, try a different approach for top-month page
+        // Look for links that contain "دانلود" or "بهترین" and have images
+        if (results.length === 0) {
+            const allLinks = doc.querySelectorAll('a[href*="/"]');
+            const processedUrls = new Set();
+            
+            allLinks.forEach((link, index) => {
+                if (index >= limit) return;
+                
+                const href = link.getAttribute('href') || '';
+                if (!href || processedUrls.has(href)) return;
+                
+                // Check if link text contains keywords indicating it's a track/playlist
+                const linkText = link.textContent.trim();
+                // For top-month page, look for links about monthly playlists
+                const hasRelevantKeywords = linkText.includes('دانلود') || 
+                                           linkText.includes('بهترین') || 
+                                           linkText.includes('آهنگ') ||
+                                           linkText.includes('پلی لیست') ||
+                                           linkText.includes('تاپ') ||
+                                           linkText.includes('ماه') ||
+                                           (linkText.length > 10 && href.includes('top-month'));
+                
+                if (!hasRelevantKeywords) return;
+                
+                // Find image near this link
+                let img = link.querySelector('img');
+                if (!img) {
+                    const parent = link.closest('div, article, section');
+                    if (parent) {
+                        img = parent.querySelector('img');
+                    }
+                }
+                
+                // Extract title from link text or nearby element
+                let itemTitle = linkText;
+                if (!itemTitle || itemTitle.length < 5) {
+                    const parent = link.closest('div, article, section');
+                    if (parent) {
+                        const titleEl = parent.querySelector('h2, h3, .title, [class*="title"]');
+                        if (titleEl) itemTitle = titleEl.textContent.trim();
+                    }
+                }
+                
+                // Clean title (remove "دانلود" prefix if present)
+                itemTitle = itemTitle.replace(/^دانلود\s*/i, '').trim();
+                
+                if (itemTitle && href && itemTitle.length > 5) {
+                    processedUrls.add(href);
+                    
+                    let imageUrl = '';
+                    if (img) {
+                        imageUrl = img.src || img.getAttribute('src') || img.getAttribute('data-src') || '';
+                    }
+                    
+                    // Normalize URLs
+                    let finalUrl = href;
+                    if (!finalUrl.startsWith('http')) {
+                        finalUrl = `https://mytehranmusic.com${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
+                    }
+                    
+                    if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+                        if (imageUrl.startsWith('//')) imageUrl = 'https:' + imageUrl;
+                        else if (imageUrl.startsWith('/')) imageUrl = 'https://mytehranmusic.com' + imageUrl;
+                        else imageUrl = 'https://mytehranmusic.com/' + imageUrl;
+                    }
+                    
+                    results.push({
+                        id: Date.now() + index,
+                        title: itemTitle,
+                        artist: 'پلی لیست',
+                        url: finalUrl,
+                        image: imageUrl,
+                        pageUrl: finalUrl
+                    });
+                }
+            });
+        }
+        
+        // Check for pagination
+        const hasMore = this.checkForMorePages(doc);
+        
+        return { items: results, hasMore };
+    }
+    
+    // Load latest tracks
+    async loadLatestTracks() {
+        if (!this.latestTracksList) return;
+        
+        const url = 'https://mytehranmusic.com/';
+        
+        // Check cache first
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            // Show cached items immediately
+            this.renderExploreItems(this.latestTracksList, cached, true, 'latest');
+            // Show loading indicator while checking for updates
+            this.latestTracksList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.latestTracksList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        // Fetch fresh data
+        const { items, hasMore } = await this.fetchExploreItems(url, 5);
+        
+        // Remove loading indicator
+        const loadingEl = this.latestTracksList.querySelector('.explore-loading-inline');
+        if (loadingEl) loadingEl.remove();
+        
+        // Update only if items changed
+        if (this.hasItemsChanged(cached, items)) {
+            this.renderExploreItems(this.latestTracksList, items, hasMore, 'latest');
+        }
+    }
+    
+    // Load top monthly tracks
+    async loadTopMonthly() {
+        if (!this.topMonthlyList) return;
+        
+        const url = 'https://mytehranmusic.com/top-month-tehranmusic/';
+        
+        // Check cache first
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            // Show cached items immediately
+            this.renderExploreItems(this.topMonthlyList, cached, true, 'topMonthly');
+            // Show loading indicator while checking for updates
+            this.topMonthlyList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.topMonthlyList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        try {
+            // Fetch fresh data
+            const { items, hasMore } = await this.fetchExploreItems(url, 5);
+            
+            // Remove loading indicator
+            const loadingEl = this.topMonthlyList.querySelector('.explore-loading-inline');
+            if (loadingEl) loadingEl.remove();
+            
+            // If we got items, update the list
+            if (items && items.length > 0) {
+                // Update only if items changed
+                if (this.hasItemsChanged(cached, items)) {
+                    this.renderExploreItems(this.topMonthlyList, items, hasMore, 'topMonthly');
+                }
+            } else {
+                // If no items and we have cache, keep showing cache
+                if (!cached || cached.length === 0) {
+                    this.topMonthlyList.innerHTML = '<div class="explore-loading"><p>آیتمی یافت نشد</p></div>';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading top monthly tracks:', error);
+            // Remove loading indicator
+            const loadingEl = this.topMonthlyList.querySelector('.explore-loading-inline');
+            if (loadingEl) loadingEl.remove();
+            
+            // If we have cache, keep showing it
+            if (!cached || cached.length === 0) {
+                this.topMonthlyList.innerHTML = '<div class="explore-loading"><p>خطا در بارگذاری</p></div>';
+            }
+        }
+    }
+    
+    // Load podcasts
+    async loadPodcasts() {
+        if (!this.podcastsList) return;
+        
+        const url = 'https://mytehranmusic.com/podcasts/';
+        
+        // Check cache first
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            // Show cached items immediately
+            this.renderExploreItems(this.podcastsList, cached, true, 'podcasts');
+            // Show loading indicator while checking for updates
+            this.podcastsList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.podcastsList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        // Fetch fresh data
+        const { items, hasMore } = await this.fetchExploreItems(url, 5);
+        
+        // Remove loading indicator
+        const loadingEl = this.podcastsList.querySelector('.explore-loading-inline');
+        if (loadingEl) loadingEl.remove();
+        
+        // Update only if items changed
+        if (this.hasItemsChanged(cached, items)) {
+            this.renderExploreItems(this.podcastsList, items, hasMore, 'podcasts');
+        }
+    }
+    
+    // Render explore items horizontally
+    renderExploreItems(container, items, hasMore, type) {
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        items.forEach(track => {
+            const item = this.createExploreItem(track);
+            container.appendChild(item);
+        });
+        
+        // Add "View More" button
+        if (hasMore) {
+            const viewMoreBtn = document.createElement('div');
+            viewMoreBtn.className = 'explore-view-more';
+            viewMoreBtn.innerHTML = `
+                <div class="explore-view-more-content">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 4l1.41 1.41L7.83 11H20v2H7.83l5.58 5.59L12 20l-8-8z"/>
+                    </svg>
+                    <span>مشاهده بیشتر</span>
+                </div>
+            `;
+            viewMoreBtn.addEventListener('click', () => {
+                this.openExploreDetail(type);
+            });
+            container.appendChild(viewMoreBtn);
+        }
+    }
+    
+    // Create explore item element - use same format as createTrackElement for consistency
+    createExploreItem(track) {
+        // Use createTrackElement for consistency - it will show play, heart, and plus buttons
+        return this.createTrackElement(track, 'explore');
+    }
+    
+    // Open explore detail page
+    openExploreDetail(type) {
+        this.currentExploreType = type;
+        this.currentExplorePage = 1;
+        this.navigateToPage('exploreDetail');
+    }
+    
+    // Load explore detail page with infinite scroll
+    async loadExploreDetail(type, page = 1, retryCount = 0, maxRetries = 3) {
+        if (this.exploreLoading) return;
+        
+        this.exploreLoading = true;
+        
+        if (page === 1) {
+            // Show loading indicator at the top (like search page)
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'flex';
+            }
+            // Clear container
+            if (this.exploreDetailContainer) {
+                this.exploreDetailContainer.innerHTML = '';
+            }
+        } else {
+            if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'flex';
+            }
+        }
+        
+        let url = '';
+        let title = '';
+        
+        switch(type) {
+            case 'latest':
+                url = 'https://mytehranmusic.com/';
+                title = 'آهنگ‌های جدید';
+                break;
+            case 'topMonthly':
+                url = 'https://mytehranmusic.com/top-month-tehranmusic/';
+                title = 'برترین‌های ماه';
+                break;
+            case 'podcasts':
+                url = 'https://mytehranmusic.com/podcasts/';
+                title = 'پادکست‌ها';
+                break;
+        }
+        
+        if (this.exploreDetailTitle) {
+            this.exploreDetailTitle.textContent = title;
+        }
+        
+        // Handle pagination for different URL patterns
+        if (page > 1) {
+            if (type === 'latest') {
+                url = `https://mytehranmusic.com/page/${page}/`;
+            } else if (type === 'topMonthly') {
+                url = `https://mytehranmusic.com/top-month-tehranmusic/page/${page}/`;
+            } else if (type === 'podcasts') {
+                url = `https://mytehranmusic.com/podcasts/page/${page}/`;
+            }
+        }
+        
+        try {
+            // Fetch items (limit 20 per page for detail view)
+            const { items, hasMore } = await this.fetchExploreItems(url, 20, 0, maxRetries);
+            this.exploreHasMore = hasMore;
+            this.currentExplorePage = page;
+            
+            // If no items and page > 1, we've reached the end
+            if (items.length === 0 && page > 1) {
+                this.exploreHasMore = false;
+            }
+            
+            if (page === 1) {
+                if (this.exploreDetailContainer) {
+                    this.exploreDetailContainer.innerHTML = '';
+                }
+            }
+            
+            items.forEach(track => {
+                const trackEl = this.createTrackElement(track, 'explore');
+                if (this.exploreDetailContainer) {
+                    this.exploreDetailContainer.appendChild(trackEl);
+                }
+            });
+            
+            // Hide loading indicators
+            if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'none';
+            }
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'none';
+            }
+            
+            this.exploreLoading = false;
+            
+            // Setup infinite scroll for explore detail page
+            if (this.exploreHasMore && page === 1) {
+                this.setupExploreDetailInfiniteScroll();
+            }
+        } catch (error) {
+            console.error(`Error loading explore detail (attempt ${retryCount + 1}/${maxRetries}):`, error);
+            
+            if (retryCount < maxRetries) {
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+                this.exploreLoading = false;
+                return this.loadExploreDetail(type, page, retryCount + 1, maxRetries);
+            }
+            
+            // Hide loading indicator
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'none';
+            }
+            // Show error message if all retries failed
+            if (this.exploreDetailContainer) {
+                this.exploreDetailContainer.innerHTML = '<div class="explore-loading"><p>خطا در بارگذاری. لطفا دوباره تلاش کنید.</p></div>';
+            }
+            if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'none';
+            }
+            this.exploreLoading = false;
+        }
+    }
+    
+    // Setup infinite scroll for explore detail page
+    setupExploreDetailInfiniteScroll() {
+        // Remove existing listener if any
+        if (this.exploreDetailScrollHandler) {
+            window.removeEventListener('scroll', this.exploreDetailScrollHandler);
+        }
+        
+        this.exploreDetailScrollHandler = () => {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            
+            // Show/hide scroll to top button
+            if (this.exploreDetailScrollToTopBtn) {
+                if (this.currentPage === 'exploreDetail' && scrollTop > 300) {
+                    this.exploreDetailScrollToTopBtn.style.display = 'flex';
+                } else {
+                    this.exploreDetailScrollToTopBtn.style.display = 'none';
+                }
+            }
+            
+            // Load more when user is near bottom (200px before end)
+            if (!this.exploreLoading && this.exploreHasMore && scrollTop + windowHeight >= documentHeight - 200) {
+                this.loadExploreDetail(this.currentExploreType, this.currentExplorePage + 1);
+            }
+        };
+        
+        window.addEventListener('scroll', this.exploreDetailScrollHandler);
+    }
+    
+    // Cache explore items
+    cacheExploreItems(url, items) {
+        if (!items || items.length === 0) return;
+        
+        const cacheKey = this.getExploreCacheKey(url);
+        this.exploreCache[cacheKey] = {
+            items: items,
+            timestamp: Date.now()
+        };
+        this.saveExploreCache();
+    }
+    
+    // Get cached explore items
+    getCachedExploreItems(url) {
+        const cacheKey = this.getExploreCacheKey(url);
+        const cached = this.exploreCache[cacheKey];
+        
+        if (cached && cached.items) {
+            // Cache is valid for 1 hour
+            const cacheAge = Date.now() - cached.timestamp;
+            if (cacheAge < 3600000) { // 1 hour
+                return cached.items;
+            }
+        }
+        
+        return null;
+    }
+    
+    // Get cache key for explore URL
+    getExploreCacheKey(url) {
+        try {
+            const urlObj = new URL(url);
+            return urlObj.origin + urlObj.pathname;
+        } catch (e) {
+            return url.split('?')[0].split('#')[0];
+        }
+    }
+    
+    // Check if items have changed
+    hasItemsChanged(oldItems, newItems) {
+        if (!oldItems || oldItems.length === 0) return true;
+        if (!newItems || newItems.length === 0) return false;
+        if (oldItems.length !== newItems.length) return true;
+        
+        // Compare first item's title and artist
+        for (let i = 0; i < Math.min(oldItems.length, newItems.length); i++) {
+            if (oldItems[i].title !== newItems[i].title || 
+                oldItems[i].artist !== newItems[i].artist) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    // Save explore cache to localStorage
+    saveExploreCache() {
+        try {
+            // Only save items, not timestamps (we'll regenerate them on load)
+            const cacheToSave = {};
+            Object.keys(this.exploreCache).forEach(key => {
+                cacheToSave[key] = {
+                    items: this.exploreCache[key].items,
+                    timestamp: this.exploreCache[key].timestamp
+                };
+            });
+            localStorage.setItem('mytehranExploreCache', JSON.stringify(cacheToSave));
+        } catch (e) {
+            console.warn('Could not save explore cache:', e);
+        }
+    }
+    
+    // Load explore cache from localStorage
+    loadExploreCache() {
+        try {
+            const cached = localStorage.getItem('mytehranExploreCache');
+            if (cached) {
+                this.exploreCache = JSON.parse(cached);
+            } else {
+                this.exploreCache = {};
+            }
+        } catch (e) {
+            console.warn('Could not load explore cache:', e);
+            this.exploreCache = {};
         }
     }
 

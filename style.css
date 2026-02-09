@@ -2769,6 +2769,347 @@ header h1 {
     border-left: 4px solid #1e88e5;
 }
 
+/* Explore Page Styles */
+.explore-section {
+    margin-bottom: 40px;
+}
+
+.explore-section-header {
+    margin-bottom: 16px;
+}
+
+.explore-section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.explore-items-container {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-hover) transparent;
+}
+
+.explore-items-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.explore-items-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.explore-items-container::-webkit-scrollbar-thumb {
+    background: var(--bg-hover);
+    border-radius: 3px;
+}
+
+.explore-items-container::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+.explore-items-scroll {
+    display: inline-block;
+    width: max-content;
+}
+
+.explore-items-list {
+    display: flex;
+    gap: 12px;
+    padding: 4px 0;
+    align-items: stretch;
+}
+
+/* Explore items now use track-item class, so we style them within explore containers */
+.explore-horizontal-scroll .track-item,
+.explore-items-list .track-item {
+    flex-shrink: 0;
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.explore-horizontal-scroll .track-item:hover,
+.explore-items-list .track-item:hover {
+    transform: translateY(-2px);
+}
+
+.explore-horizontal-scroll .track-image,
+.explore-items-list .track-image {
+    margin-bottom: 8px;
+}
+
+.explore-horizontal-scroll .track-info,
+.explore-items-list .track-info {
+    margin-bottom: 8px;
+}
+
+.explore-horizontal-scroll .track-info h4,
+.explore-items-list .track-info h4 {
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+
+.explore-horizontal-scroll .track-info p,
+.explore-items-list .track-info p {
+    font-size: 0.8rem;
+}
+
+.explore-horizontal-scroll .track-actions,
+.explore-items-list .track-actions {
+    gap: 6px;
+}
+
+.explore-horizontal-scroll .track-actions .btn,
+.explore-items-list .track-actions .btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+}
+
+.explore-horizontal-scroll .track-actions .btn svg,
+.explore-items-list .track-actions .btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.explore-view-more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    min-width: 160px;
+    width: 160px;
+    max-width: 160px;
+    min-height: 100%;
+    flex-shrink: 0;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    align-self: stretch;
+}
+
+.explore-view-more:hover {
+    background: var(--bg-hover);
+    border-color: var(--spotify-green);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.explore-view-more-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    width: 100%;
+}
+
+.explore-view-more:hover .explore-view-more-content {
+    color: var(--text-primary);
+    border-color: var(--spotify-green);
+}
+
+.explore-view-more-content svg {
+    width: 24px;
+    height: 24px;
+}
+
+.explore-view-more-content span {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.explore-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 12px;
+    color: var(--text-secondary);
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border-radius: 8px;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+    cursor: default;
+    position: relative;
+}
+
+/* Add placeholder image area to match track-item structure exactly */
+.explore-loading::before {
+    content: '';
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    margin-bottom: 8px;
+    display: block;
+    opacity: 0.3;
+    flex-shrink: 0;
+}
+
+/* Position spinner in center of placeholder image */
+.explore-loading .spinner {
+    position: absolute;
+    top: calc(12px + 68px); /* padding-top + half of image height (136px / 2) */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    margin: 0;
+}
+
+.explore-loading p {
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: 0.8rem;
+    text-align: center;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+}
+
+.explore-loading-inline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    margin-bottom: 0;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border-radius: 8px;
+    border: 1px solid transparent;
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    position: relative;
+    min-height: 100%;
+    flex-shrink: 0;
+    align-self: stretch;
+    box-sizing: border-box;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .explore-horizontal-scroll .track-item,
+    .explore-items-list .track-item {
+        width: 140px;
+        min-width: 140px;
+        max-width: 140px;
+        padding: 10px;
+    }
+    
+    .explore-view-more {
+        min-width: 140px;
+        width: 140px;
+        max-width: 140px;
+        padding: 10px;
+    }
+    
+    .explore-loading {
+        width: 140px;
+        min-width: 140px;
+        max-width: 140px;
+        padding: 10px;
+    }
+    
+    .explore-loading-inline {
+        width: 140px;
+        min-width: 140px;
+        max-width: 140px;
+        padding: 10px;
+    }
+    
+    /* Adjust spinner position for smaller size */
+    .explore-loading .spinner {
+        top: calc(10px + 60px); /* padding-top + half of image height (120px / 2) */
+    }
+    
+    .explore-items-list {
+        gap: 12px;
+    }
+    
+    .explore-horizontal-scroll .track-info h4,
+    .explore-items-list .track-info h4 {
+        font-size: 0.85rem;
+    }
+    
+    .explore-horizontal-scroll .track-info p,
+    .explore-items-list .track-info p {
+        font-size: 0.75rem;
+    }
+}
+
+/* Scroll to Top Button */
+.scroll-to-top-btn {
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--spotify-green);
+    color: var(--bg-primary);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    z-index: 1000;
+    opacity: 0.9;
+}
+
+.scroll-to-top-btn:hover {
+    opacity: 1;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.scroll-to-top-btn:active {
+    transform: translateY(0);
+}
+
+.scroll-to-top-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+/* Responsive for scroll to top button */
+@media (max-width: 768px) {
+    .scroll-to-top-btn {
+        bottom: 90px;
+        right: 16px;
+        width: 44px;
+        height: 44px;
+    }
+    
+    .scroll-to-top-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+}
+
 .toast-content {
     display: flex;
     align-items: center;
