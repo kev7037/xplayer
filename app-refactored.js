@@ -875,6 +875,14 @@ class MusicPlayer {
     async loadAndPlay(track) {
         if (!track) return;
         
+        // Stop and reset current playback before loading new track
+        // This prevents AbortError when switching tracks quickly
+        if (this.audioPlayer) {
+            this.audioPlayer.pause();
+            this.audioPlayer.src = '';
+            this.audioPlayer.load(); // Reset the audio element
+        }
+        
         // Store current track
         this.currentTrack = {...track};
         
@@ -940,28 +948,34 @@ class MusicPlayer {
             
             this.audioPlayer.addEventListener('error', handleDirectAudioError, { once: true });
             
-            try {
-                await this.audioPlayer.load();
-                await this.audioPlayer.play();
-                this.audioPlayer.removeEventListener('error', handleDirectAudioError);
-                this.updatePlayButton();
-                // Cache audio silently (errors are handled inside cacheAudio)
-                this.player.cacheAudio(track.url).catch(() => {});
-                this.savePlaylist();
-                this.addToRecentTracks(track);
-                return;
-            } catch (err) {
-                // Only log unexpected errors (CORS is expected and handled)
-                if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
-                    !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
-                    console.debug('Direct audio play error (unexpected):', err);
-                }
-                if (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || 
-                    err.message.includes('CORS') || err.message.includes('cross-origin')) {
-                    handleDirectAudioError();
+                try {
+                    await this.audioPlayer.load();
+                    await this.audioPlayer.play();
+                    this.audioPlayer.removeEventListener('error', handleDirectAudioError);
+                    this.updatePlayButton();
+                    // Cache audio silently (errors are handled inside cacheAudio)
+                    this.player.cacheAudio(track.url).catch(() => {});
+                    this.savePlaylist();
+                    this.addToRecentTracks(track);
                     return;
+                } catch (err) {
+                    // AbortError is expected when switching tracks quickly - silently handle
+                    if (err.name === 'AbortError' || 
+                        err.message?.includes('interrupted by a new load request')) {
+                        // This is expected behavior when user switches tracks quickly
+                        return;
+                    }
+                    // Only log unexpected errors (CORS is expected and handled)
+                    if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
+                        !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
+                        console.debug('Direct audio play error (unexpected):', err);
+                    }
+                    if (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || 
+                        err.message.includes('CORS') || err.message.includes('cross-origin')) {
+                        handleDirectAudioError();
+                        return;
+                    }
                 }
-            }
         }
         
         // Always try to extract from page URL (most reliable)
@@ -1059,6 +1073,12 @@ class MusicPlayer {
                     this.savePlaylist();
                     this.addToRecentTracks(track);
                 } catch (playError) {
+                    // AbortError is expected when switching tracks quickly - silently handle
+                    if (playError.name === 'AbortError' || 
+                        playError.message?.includes('interrupted by a new load request')) {
+                        // This is expected behavior when user switches tracks quickly
+                        return;
+                    }
                     // Even extracted URL might have CORS issues
                     // Try with crossOrigin = null
                     this.audioPlayer.crossOrigin = null;
@@ -1073,7 +1093,15 @@ class MusicPlayer {
                         this.savePlaylist();
                         this.addToRecentTracks(track);
                     } catch (retryError) {
-                        console.error('Retry play error:', retryError);
+                        // AbortError is expected when switching tracks quickly - silently handle
+                        if (retryError.name === 'AbortError' || 
+                            retryError.message?.includes('interrupted by a new load request')) {
+                            // This is expected behavior when user switches tracks quickly
+                            // The new track will handle playback
+                            return;
+                        }
+                        // Only show error for unexpected errors
+                        console.debug('Retry play error (unexpected):', retryError);
                         this.uiManager.showToast('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.', 'error');
                     }
                 }

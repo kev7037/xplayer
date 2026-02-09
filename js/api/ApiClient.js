@@ -69,6 +69,10 @@ export class ApiClient {
             clearTimeout(timeoutId);
 
             if (!response.ok) {
+                // 500 errors from proxy are often temporary - will be retried
+                if (response.status === 500) {
+                    throw new Error(`Proxy server error (${response.status}) - will retry`);
+                }
                 throw new Error(`HTTP ${response.status}`);
             }
 
