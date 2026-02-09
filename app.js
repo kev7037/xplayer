@@ -580,22 +580,52 @@ class MusicPlayer {
             searchUrl += `&paged=${page}`;
         }
         
-        // Use CORS proxy to bypass CORS restrictions
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+        // Try multiple proxies in parallel for fastest response
+        const proxyPromises = [
+            (async () => {
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                try {
+                    const response = await fetch(proxyUrl, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    return data.contents;
+                } catch (e) {
+                    clearTimeout(timeoutId);
+                    throw e;
+                }
+            })(),
+            (async () => {
+                const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(searchUrl)}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                try {
+                    const response = await fetch(proxyUrl, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return await response.text();
+                } catch (e) {
+                    clearTimeout(timeoutId);
+                    throw e;
+                }
+            })()
+        ];
         
+        // Use Promise.race for fastest response
         try {
-            const response = await fetch(proxyUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            const htmlContent = data.contents;
-            
+            const htmlContent = await Promise.race(proxyPromises);
             return this.parseSearchResults(htmlContent, query, page);
-        } catch (error) {
-            console.warn('Error fetching search results:', error);
-            // Try alternative proxy services
+        } catch (raceError) {
+            // If race fails, try allSettled as fallback
+            const results = await Promise.allSettled(proxyPromises);
+            for (const result of results) {
+                if (result.status === 'fulfilled') {
+                    return this.parseSearchResults(result.value, query, page);
+                }
+            }
+            // Final fallback
             return await this.fetchSearchResultsAlternative(query, page);
         }
     }
@@ -607,7 +637,7 @@ class MusicPlayer {
         }
         
         // Try alternative CORS proxy
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`;
+        const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(searchUrl)}`;
         
         try {
             const response = await fetch(proxyUrl);
@@ -1724,26 +1754,62 @@ class MusicPlayer {
         if (!pageUrl) return null;
         
         try {
-            // Use CORS proxy to fetch page
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
-            let response = await fetch(proxyUrl);
+            // Try multiple proxies in parallel for fastest response (reduced timeout)
+            const proxyPromises = [
+                (async () => {
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        if (response.headers.get('content-type')?.includes('application/json')) {
+                            const data = await response.json();
+                            return data.contents;
+                        }
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })(),
+                (async () => {
+                    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })()
+            ];
             
-            if (!response.ok) {
-                // Try alternative proxy
-                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
-                response = await fetch(proxyUrl);
+            // Use Promise.race for fastest response
+            let html = null;
+            try {
+                html = await Promise.race(proxyPromises);
+            } catch (raceError) {
+                // If race fails, try allSettled as fallback
+                const results = await Promise.allSettled(proxyPromises);
+                for (const result of results) {
+                    if (result.status === 'fulfilled') {
+                        html = result.value;
+                        break;
+                    }
+                }
+                if (!html) {
+                    throw new Error('All proxies failed');
+                }
             }
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            let html;
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const data = await response.json();
-                html = data.contents;
-            } else {
-                html = await response.text();
+            if (!html) {
+                return null;
             }
             
             const parser = new DOMParser();
@@ -2204,26 +2270,55 @@ class MusicPlayer {
 
     async extractAudioUrl(pageUrl) {
         try {
-            // Try primary CORS proxy
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
-            let response = await fetch(proxyUrl);
+            // Try multiple proxies in parallel for fastest response (reduced timeout)
+            const proxyPromises = [
+                (async () => {
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        if (response.headers.get('content-type')?.includes('application/json')) {
+                            const data = await response.json();
+                            return data.contents;
+                        }
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })(),
+                (async () => {
+                    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })()
+            ];
             
-            if (!response.ok) {
-                // Try alternative proxy
-                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
-                response = await fetch(proxyUrl);
-            }
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            let html;
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const data = await response.json();
-                html = data.contents;
-            } else {
-                html = await response.text();
+            // Use Promise.race for fastest response
+            try {
+                const html = await Promise.race(proxyPromises);
+                return html;
+            } catch (raceError) {
+                // If race fails, try allSettled as fallback
+                const results = await Promise.allSettled(proxyPromises);
+                for (const result of results) {
+                    if (result.status === 'fulfilled') {
+                        return result.value;
+                    }
+                }
+                throw new Error('All proxies failed');
             }
             
             const parser = new DOMParser();
@@ -3312,8 +3407,9 @@ class MusicPlayer {
     }
     
     // Fetch and parse items from a URL with retry logic and multiple proxy fallbacks
-    async fetchExploreItems(url, limit = 5, retryCount = 0, maxRetries = 3) {
-        // List of CORS proxy services to try
+    async fetchExploreItems(url, limit = 5, retryCount = 0, maxRetries = 1) {
+        // List of CORS proxy services to try (ordered by speed/reliability)
+        // Using only fastest proxies in parallel
         const proxyServices = [
             {
                 name: 'allorigins',
@@ -3327,38 +3423,21 @@ class MusicPlayer {
                 }
             },
             {
-                name: 'corsproxy',
-                getUrl: (targetUrl) => `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-                parseResponse: async (response) => {
-                    if (response.headers.get('content-type')?.includes('application/json')) {
-                        const data = await response.json();
-                        return data.contents || data;
-                    }
-                    return await response.text();
-                }
-            },
-            {
-                name: 'cors-anywhere',
-                getUrl: (targetUrl) => `https://cors-anywhere.herokuapp.com/${targetUrl}`,
-                parseResponse: async (response) => await response.text()
-            },
-            {
                 name: 'proxy',
                 getUrl: (targetUrl) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
                 parseResponse: async (response) => await response.text()
             }
         ];
         
-        // Try each proxy service
-        for (let proxyIndex = 0; proxyIndex < proxyServices.length; proxyIndex++) {
-            const proxy = proxyServices[proxyIndex];
+        // Try proxies in parallel using Promise.race for fastest response
+        // Only try 2 fastest proxies to reduce overhead
+        const proxyPromises = proxyServices.map(async (proxy, proxyIndex) => {
+            const proxyUrl = proxy.getUrl(url);
             
             try {
-                const proxyUrl = proxy.getUrl(url);
-                
-                // Create abort controller for timeout
+                // Create AbortController for timeout (reduced to 3 seconds for faster failure)
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
                 
                 const response = await fetch(proxyUrl, {
                     method: 'GET',
@@ -3371,10 +3450,6 @@ class MusicPlayer {
                 clearTimeout(timeoutId);
                 
                 if (!response.ok) {
-                    // If this is not the last proxy, try next one
-                    if (proxyIndex < proxyServices.length - 1) {
-                        continue;
-                    }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
@@ -3382,43 +3457,61 @@ class MusicPlayer {
                 const html = await proxy.parseResponse(response);
                 
                 if (!html || html.trim().length === 0) {
-                    // If this is not the last proxy, try next one
-                    if (proxyIndex < proxyServices.length - 1) {
-                        continue;
-                    }
                     throw new Error('Empty response from proxy');
                 }
                 
-                const result = this.parseExploreItems(html, limit);
+                return { html, proxyIndex, success: true };
+            } catch (error) {
+                return { error, proxyIndex, success: false };
+            }
+        });
+        
+        // Use Promise.race to get first successful response (faster than allSettled)
+        try {
+            const raceResult = await Promise.race(proxyPromises);
+            if (raceResult.success) {
+                const html = raceResult.html;
+                const parsedResult = this.parseExploreItems(html, limit);
                 
                 // Cache result if limit is 5 (first 5 items)
-                if (limit === 5 && result.items.length > 0) {
-                    this.cacheExploreItems(url, result.items);
+                if (limit === 5 && parsedResult.items.length > 0) {
+                    this.cacheExploreItems(url, parsedResult.items);
                 }
                 
-                return result;
-            } catch (error) {
-                // If this is the last proxy and we've tried all retries, throw
-                if (proxyIndex === proxyServices.length - 1 && retryCount >= maxRetries) {
-                    console.error(`All proxies failed for ${url}. Last error:`, error);
-                    return { items: [], hasMore: false };
+                return parsedResult;
+            }
+        } catch (raceError) {
+            // Race failed, continue to allSettled fallback
+        }
+        
+        // Fallback: Wait for all promises to settle
+        const results = await Promise.allSettled(proxyPromises);
+        
+        // Find first successful result
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.success) {
+                const html = result.value.html;
+                
+                const parsedResult = this.parseExploreItems(html, limit);
+                
+                // Cache result if limit is 5 (first 5 items)
+                if (limit === 5 && parsedResult.items.length > 0) {
+                    this.cacheExploreItems(url, parsedResult.items);
                 }
                 
-                // If this is not the last proxy, try next one
-                if (proxyIndex < proxyServices.length - 1) {
-                    continue;
-                }
-                
-                // If all proxies failed in this attempt, retry with next attempt
-                if (retryCount < maxRetries) {
-                    console.warn(`Proxy ${proxy.name} failed (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-                    return this.fetchExploreItems(url, limit, retryCount + 1, maxRetries);
-                }
+                return parsedResult;
             }
         }
         
-        // If we get here, all proxies failed
+        // If all proxies failed in this attempt, retry with shorter delay
+        if (retryCount < maxRetries) {
+            const delay = 200; // Fixed 200ms delay for faster retry
+            console.warn(`All proxies failed for ${url} (attempt ${retryCount + 1}/${maxRetries}), retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.fetchExploreItems(url, limit, retryCount + 1, maxRetries);
+        }
+        
+        // If we get here, all proxies failed after all retries
         console.error(`All proxy services failed for ${url} after ${retryCount + 1} attempts`);
         return { items: [], hasMore: false };
     }
