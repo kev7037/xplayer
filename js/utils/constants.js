@@ -31,7 +31,7 @@ export const API_ENDPOINTS = {
     }
 };
 
-export const REQUEST_TIMEOUT = 3000; // 3 seconds
+export const REQUEST_TIMEOUT = 8000; // 8 seconds (increased for better reliability)
 
 export const CACHE_NAMES = {
     AUDIO: 'mytehran-audio-v1'

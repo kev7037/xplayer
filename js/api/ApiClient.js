@@ -6,11 +6,13 @@ import { createTimeoutController } from '../utils/helpers.js';
 
 export class ApiClient {
     /**
-     * Fetch HTML content using multiple proxies in parallel
+     * Fetch HTML content using multiple proxies in parallel with retry logic
      * @param {string} url - URL to fetch
+     * @param {number} retryCount - Current retry attempt
+     * @param {number} maxRetries - Maximum retry attempts
      * @returns {Promise<string>} HTML content
      */
-    static async fetchHtml(url) {
+    static async fetchHtml(url, retryCount = 0, maxRetries = 2) {
         const proxyPromises = [
             this._fetchWithProxy(url, API_ENDPOINTS.PROXIES.ALLORIGINS, true),
             this._fetchWithProxy(url, API_ENDPOINTS.PROXIES.CODETABS, false)
@@ -28,6 +30,14 @@ export class ApiClient {
                     return result.value;
                 }
             }
+            
+            // If all proxies failed and we have retries left, retry with delay
+            if (retryCount < maxRetries) {
+                const delay = (retryCount + 1) * 500; // Exponential backoff: 500ms, 1000ms
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.fetchHtml(url, retryCount + 1, maxRetries);
+            }
+            
             throw new Error('All proxies failed');
         }
     }

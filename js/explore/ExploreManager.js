@@ -107,10 +107,22 @@ export class ExploreManager {
             return parsedResult;
         } catch (error) {
             console.error('Error fetching explore items:', error);
+            
+            // Try to use cached data as fallback
+            const cachedItems = this.getCachedItems(url);
+            if (cachedItems && cachedItems.length > 0) {
+                console.log('Using cached explore items as fallback');
+                return { items: cachedItems.slice(0, limit), hasMore: false };
+            }
+            
+            // Retry if we have retries left
             if (retryCount < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 200));
+                const delay = (retryCount + 1) * 500; // Exponential backoff
+                await new Promise(resolve => setTimeout(resolve, delay));
                 return this.fetchExploreItems(url, limit, retryCount + 1, maxRetries);
             }
+            
+            // Return empty result if all retries failed
             return { items: [], hasMore: false };
         }
     }
