@@ -923,18 +923,28 @@ class MusicPlayer {
             this.bottomPlayerBar.style.display = 'flex';
         }
         
-        // Check if track.url is a direct audio file
+        // Check if track.url is a direct audio file from dl.mytehranmusic.com
+        // These URLs are CORS-protected, so we should use page extraction instead
+        const isDirectAudioFromDl = track.url && track.url.includes('dl.mytehranmusic.com');
+        
+        // If we have pageUrl, always use page extraction (most reliable, avoids CORS errors)
+        // This prevents CORS errors in console when trying direct audio from dl.mytehranmusic.com
+        if (track.pageUrl) {
+            await this.extractAndPlayFromPage(track);
+            return;
+        }
+        
+        // Only try direct audio if we don't have pageUrl and it's not from dl.mytehranmusic.com
+        // (dl.mytehranmusic.com URLs are always CORS-protected)
         const isDirectAudio = track.url && (
-            track.url.includes('.mp3') || 
-            track.url.includes('.m4a') || 
-            track.url.includes('.ogg') || 
-            track.url.includes('dl.mytehranmusic.com')
+            (track.url.includes('.mp3') || 
+             track.url.includes('.m4a') || 
+             track.url.includes('.ogg')) &&
+            !isDirectAudioFromDl // Skip dl.mytehranmusic.com URLs
         );
         
-        // If we have a direct audio URL, try it first (faster)
-        // But also ensure we have pageUrl as fallback
-        if (isDirectAudio && track.pageUrl) {
-            // Try direct audio first, fallback to page extraction if CORS fails
+        if (isDirectAudio) {
+            // Try direct audio for non-CORS-protected URLs
             this.audioPlayer.crossOrigin = null;
             this.audioPlayer.src = track.url;
             
@@ -942,105 +952,42 @@ class MusicPlayer {
             const handleDirectAudioError = async () => {
                 if (errorHandled) return;
                 errorHandled = true;
-                // Silently handle - this is expected for CORS-protected URLs
-                await this.extractAndPlayFromPage(track);
+                // If direct audio fails, show error (no pageUrl to fallback to)
+                this.uiManager.showToast('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.', 'error');
             };
             
             this.audioPlayer.addEventListener('error', handleDirectAudioError, { once: true });
             
-                try {
-                    await this.audioPlayer.load();
-                    await this.audioPlayer.play();
-                    this.audioPlayer.removeEventListener('error', handleDirectAudioError);
-                    this.updatePlayButton();
-                    // Cache audio silently (errors are handled inside cacheAudio)
-                    this.player.cacheAudio(track.url).catch(() => {});
-                    this.savePlaylist();
-                    this.addToRecentTracks(track);
-                    return;
-                } catch (err) {
-                    // AbortError is expected when switching tracks quickly - silently handle
-                    if (err.name === 'AbortError' || 
-                        err.message?.includes('interrupted by a new load request')) {
-                        // This is expected behavior when user switches tracks quickly
-                        return;
-                    }
-                    // Only log unexpected errors (CORS is expected and handled)
-                    if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
-                        !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
-                        console.debug('Direct audio play error (unexpected):', err);
-                    }
-                    if (err.name === 'NotAllowedError' || err.name === 'NotSupportedError' || 
-                        err.message.includes('CORS') || err.message.includes('cross-origin')) {
-                        handleDirectAudioError();
-                        return;
-                    }
-                }
-        }
-        
-        // Always try to extract from page URL (most reliable)
-        if (track.pageUrl) {
-            await this.extractAndPlayFromPage(track);
-            return;
-        }
-        
-        // Fallback: Check if URL is a direct audio file (if not already checked)
-        if (!isDirectAudio && audioUrl) {
-            // Try direct audio URL first (might work for some servers)
-            this.audioPlayer.crossOrigin = null;
-            this.audioPlayer.src = audioUrl;
-            
-            // Set up error handler for CORS issues
-            let errorHandled = false;
-            const handleAudioError = async (e) => {
-                if (errorHandled) return;
-                errorHandled = true;
-                
-                console.log('Direct audio failed, trying to extract from page...');
-                // Try to extract from page if we have the URL
-                // For mytehranmusic.com, we can construct page URL from audio URL
-                if (audioUrl.includes('dl.mytehranmusic.com')) {
-                    // Try to construct page URL from audio URL
-                    // This is a fallback - ideally track should have pageUrl
-                    this.uiManager.showToast('در حال بارگذاری...', 'info');
-                    // We'll need to search for the track or use a different approach
-                    this.uiManager.showToast('لطفا از صفحه اصلی آهنگ استفاده کنید', 'error');
-                } else {
-                    this.uiManager.showToast('خطا در پخش موزیک', 'error');
-                }
-            };
-            
-            // Listen for CORS/network errors
-            this.audioPlayer.addEventListener('error', handleAudioError, { once: true });
-            
             try {
                 await this.audioPlayer.load();
                 await this.audioPlayer.play();
-                // Success - remove error handler
-                this.audioPlayer.removeEventListener('error', handleAudioError);
+                this.audioPlayer.removeEventListener('error', handleDirectAudioError);
                 this.updatePlayButton();
-                this.player.cacheAudio(audioUrl).catch(() => {
-                    // Silently fail - caching errors are non-critical
-                });
+                // Cache audio silently (errors are handled inside cacheAudio)
+                this.player.cacheAudio(track.url).catch(() => {});
                 this.savePlaylist();
                 this.addToRecentTracks(track);
+                return;
             } catch (err) {
-                // Only log unexpected errors (CORS is expected)
+                // AbortError is expected when switching tracks quickly - silently handle
+                if (err.name === 'AbortError' || 
+                    err.message?.includes('interrupted by a new load request')) {
+                    // This is expected behavior when user switches tracks quickly
+                    return;
+                }
+                // Only log unexpected errors
                 if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError' && 
                     !err.message.includes('CORS') && !err.message.includes('cross-origin')) {
-                    console.debug('Play error (unexpected):', err);
+                    console.debug('Direct audio play error (unexpected):', err);
                 }
-                // Check if it's a CORS error
-                if (err.name === 'NotAllowedError' || err.message.includes('CORS') || err.message.includes('cross-origin') || err.name === 'NotSupportedError') {
-                    handleAudioError(err);
-                } else {
-                    // Other error
-                    this.uiManager.showToast('خطا در پخش موزیک', 'error');
-                }
+                handleDirectAudioError();
+                return;
             }
-        } else {
-            this.uiManager.showToast('آدرس موزیک نامعتبر است', 'error');
         }
+        
+        // If we reach here, we couldn't play the track
+        // This should rarely happen if track.pageUrl is properly set
+        this.uiManager.showToast('نمی‌توان موزیک را پخش کرد. لطفا موزیک دیگری انتخاب کنید.', 'error');
     }
     
     async extractAndPlayFromPage(track) {
