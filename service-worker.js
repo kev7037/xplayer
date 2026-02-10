@@ -30,6 +30,17 @@ self.addEventListener('install', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
+  // Skip service worker for CORS proxy requests - let browser handle them directly
+  // These proxies don't support service worker interception and cause CORS errors
+  const isCorsProxy = url.hostname.includes('allorigins.win') || 
+                      url.hostname.includes('codetabs.com') ||
+                      url.hostname.includes('corsproxy') ||
+                      url.hostname.includes('cors-anywhere');
+  
+  if (isCorsProxy) {
+    return; // Let browser handle CORS proxy requests normally
+  }
+  
   // Skip service worker for code files - let browser handle them directly
   const isCodeFile = url.pathname.match(/\.(html|css|js|json)$/i) || 
                      url.pathname === '/' ||
