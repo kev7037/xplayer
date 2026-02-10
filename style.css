@@ -567,6 +567,87 @@ body {
     }
 }
 
+/* Explore Page Styles */
+.explore-section {
+    margin-bottom: 40px;
+}
+
+.explore-section-header {
+    margin-bottom: 16px;
+}
+
+.explore-section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.explore-items-container {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-hover) transparent;
+}
+
+.explore-items-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.explore-items-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.explore-items-container::-webkit-scrollbar-thumb {
+    background: var(--bg-hover);
+    border-radius: 3px;
+}
+
+.explore-items-container::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+.explore-items-scroll {
+    display: inline-block;
+    width: max-content;
+}
+
+.explore-items-list {
+    display: flex;
+    gap: 12px;
+    padding: 4px 0;
+    align-items: stretch;
+}
+
+/* Horizontal track cards inside Explore */
+.explore-horizontal-scroll .track-item,
+.explore-items-list .track-item {
+    flex-shrink: 0;
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.explore-horizontal-scroll .track-item:hover,
+.explore-items-list .track-item:hover {
+    transform: translateY(-2px);
+}
+
+.explore-horizontal-scroll .track-image,
+.explore-items-list .track-image {
+    margin-bottom: 8px;
+}
+
+.explore-horizontal-scroll .track-info,
+.explore-items-list .track-info {
+    margin-bottom: 8px;
+}
+
 /* Small mobile screens */
 @media (max-width: 480px) {
     .track-item.compact,

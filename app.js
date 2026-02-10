@@ -37,9 +37,38 @@ class MusicPlayer {
         this.pages = {
             home: document.getElementById('homePage'),
             search: document.getElementById('searchPage'),
+            explore: document.getElementById('explorePage'),
             playlists: document.getElementById('playlistsPage'),
-            player: document.getElementById('playerPage')
+            player: document.getElementById('playerPage'),
+            exploreDetail: document.getElementById('exploreDetailPage')
         };
+        
+        // Explore Page
+        this.latestTracksList = document.getElementById('latestTracksList');
+        this.topMonthlyList = document.getElementById('topMonthlyList');
+        this.podcastsList = document.getElementById('podcastsList');
+        this.exploreDetailContainer = document.getElementById('exploreDetailContainer');
+        this.exploreDetailTitle = document.getElementById('exploreDetailTitle');
+        this.exploreDetailInfiniteLoader = document.getElementById('exploreDetailInfiniteLoader');
+        this.exploreDetailLoadingIndicator = document.getElementById('exploreDetailLoadingIndicator');
+        this.exploreDetailScrollToTopBtn = document.getElementById('exploreDetailScrollToTopBtn');
+        this.backFromExploreDetailBtn = document.getElementById('backFromExploreDetailBtn');
+        
+        // Setup scroll to top button for explore detail page
+        if (this.exploreDetailScrollToTopBtn) {
+            this.exploreDetailScrollToTopBtn.addEventListener('click', () => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        }
+
+        this.currentExploreType = null;
+        this.currentExplorePage = 1;
+        this.exploreHasMore = false;
+        this.exploreLoading = false;
+        this.exploreCache = {};
+        this.exploreDetailScrollHandler = null;
+        this.isDirectoryPlaylist = false; // Flag to indicate if exploreDetail shows a directory playlist
+        this.loadExploreCache();
         
         // Search
         this.searchInput = document.getElementById('searchInputMain');
@@ -184,9 +213,29 @@ class MusicPlayer {
         
         // Player page navigation - click on player bar track info
         if (this.playerBarTrack) {
-            this.playerBarTrack.addEventListener('click', () => {
-                // Only navigate if there's a track playing
-                if (this.currentIndex >= 0 && this.playlist.length > 0) {
+            this.playerBarTrack.addEventListener('click', (e) => {
+                // Prevent event from bubbling if clicking on controls
+                if (e.target.closest('button')) {
+                    return;
+                }
+                // Navigate if there's a track playing or if we have a current track
+                if ((this.currentIndex >= 0 && this.playlist.length > 0) || 
+                    (this.currentTrackEl && this.currentTrackEl.textContent !== '-')) {
+                    // Save current page before navigating to player page
+                    this.previousPage = this.currentPage || 'home';
+                    this.navigateToPage('player');
+                }
+            });
+        }
+        
+        // Also add click listener to player-bar-info directly (in case event doesn't bubble)
+        const playerBarInfo = document.querySelector('.player-bar-info');
+        if (playerBarInfo) {
+            playerBarInfo.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent double-trigger
+                // Navigate if there's a track playing or if we have a current track
+                if ((this.currentIndex >= 0 && this.playlist.length > 0) || 
+                    (this.currentTrackEl && this.currentTrackEl.textContent !== '-')) {
                     // Save current page before navigating to player page
                     this.previousPage = this.currentPage || 'home';
                     this.navigateToPage('player');
@@ -204,6 +253,13 @@ class MusicPlayer {
                 } else {
                     this.navigateToPage('home');
                 }
+            });
+        }
+
+        // Back from explore detail page button
+        if (this.backFromExploreDetailBtn) {
+            this.backFromExploreDetailBtn.addEventListener('click', () => {
+                this.navigateToPage('explore');
             });
         }
         
@@ -326,14 +382,14 @@ class MusicPlayer {
         // Don't update if user is dragging
         if (this.isDraggingProgress) return;
         
-        if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
-            const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
-            this.playerBarProgressFill.style.width = percentage + '%';
-            this.playerBarProgressHandle.style.left = percentage + '%';
-        } else {
-            this.playerBarProgressFill.style.width = '0%';
-            this.playerBarProgressHandle.style.left = '0%';
-        }
+            if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
+                const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
+                this.playerBarProgressFill.style.width = percentage + '%';
+                this.playerBarProgressHandle.style.left = percentage + '%';
+            } else {
+                this.playerBarProgressFill.style.width = '0%';
+                this.playerBarProgressHandle.style.left = '0%';
+            }
     }
 
     async search() {
@@ -369,7 +425,7 @@ class MusicPlayer {
         }
         
         // Use CORS proxy to bypass CORS restrictions
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
         
         try {
             const response = await fetch(proxyUrl);
@@ -679,44 +735,57 @@ class MusicPlayer {
                 </button>
             `;
         } else {
-            div.innerHTML = `
-                <div class="track-image">
-                    <img src="${trackImage}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
-                </div>
-                <div class="track-info">
-                    <h4>${this.escapeHtml(track.title)}</h4>
-                    <p>${this.escapeHtml(track.artist)}</p>
-                </div>
-                <div class="track-actions">
-                    ${source === 'results' ? 
-                        `<button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
-                            <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                            </svg>
-                         </button>
-                         <button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                            </svg>
-                         </button>
-                         <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                         </button>` :
-                        `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                         </button>
-                         <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                            </svg>
-                         </button>`
-                    }
-                </div>
-            `;
+            // برای explore-top (برترین‌ها) دکمه‌های اکشن را حذف می‌کنیم
+            if (source === 'explore-top') {
+                div.innerHTML = `
+                    <div class="track-image">
+                        <img src="${trackImage}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
+                    </div>
+                    <div class="track-info">
+                        <h4>${this.escapeHtml(track.title)}</h4>
+                        <p>${this.escapeHtml(track.artist)}</p>
+                    </div>
+                `;
+            } else {
+                div.innerHTML = `
+                    <div class="track-image">
+                        <img src="${trackImage}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'%23b3b3b3\\'%3E%3Cpath d=\\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\\'/%3E%3C/svg%3E'">
+                    </div>
+                    <div class="track-info">
+                        <h4>${this.escapeHtml(track.title)}</h4>
+                        <p>${this.escapeHtml(track.artist)}</p>
+                    </div>
+                    <div class="track-actions">
+                        ${source === 'results' ? 
+                            `<button class="btn btn-small btn-favorite ${isFavorite ? 'favorite-active' : ''}" data-action="toggle-favorite" data-track-id="${track.id}" title="${isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها'}">
+                                <svg class="heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                                </svg>
+                             </button>
+                             <button class="btn btn-small btn-add-to-custom" data-action="add-to-custom" data-track-id="${track.id}" title="اضافه به پلی‌لیست سفارشی">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                                </svg>
+                             </button>
+                             <button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                             </button>` :
+                            `<button class="btn btn-small btn-play" data-action="play" data-track-id="${track.id}" title="پخش">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                             </button>
+                             <button class="btn btn-small btn-remove" data-action="remove" data-track-id="${track.id}" title="حذف">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                             </button>`
+                        }
+                    </div>
+                `;
+            }
         }
 
         // Attach event listeners
@@ -727,19 +796,11 @@ class MusicPlayer {
                 const action = btn.dataset.action;
                 const trackIdStr = btn.dataset.trackId;
                 
-                if (!trackIdStr) {
-                    console.warn('No trackId found for button:', btn);
-                    return;
-                }
-                
-                const trackId = parseInt(trackIdStr);
-                if (isNaN(trackId)) {
-                    console.warn('Invalid trackId:', trackIdStr);
-                    return;
-                }
-                
                 if (action === 'toggle-favorite') {
-                    this.toggleFavorite(trackId);
+                    if (!trackIdStr) return;
+                    const trackId = parseInt(trackIdStr);
+                    if (isNaN(trackId)) return;
+                        this.toggleFavorite(trackId);
                     // Update the heart icon in the UI
                     const heartBtn = div.querySelector('.btn-favorite');
                     const heartIcon = div.querySelector('.heart-icon');
@@ -754,9 +815,15 @@ class MusicPlayer {
                         heartIcon.setAttribute('fill', 'none');
                     }
                 } else if (action === 'add-to-custom') {
+                    if (!trackIdStr) return;
+                    const trackId = parseInt(trackIdStr);
+                    if (isNaN(trackId)) return;
                     this.showAddToPlaylistDialog(trackId);
                 } else if (action === 'play') {
                     if (source === 'playlist-detail') {
+                        if (!trackIdStr) return;
+                        const trackId = parseInt(trackIdStr);
+                        if (isNaN(trackId)) return;
                         // Find track index in current playlist
                         const trackIndex = this.playlist.findIndex(t => t.id === trackId);
                         if (trackIndex !== -1) {
@@ -768,7 +835,28 @@ class MusicPlayer {
                                 this.displayPlaylistTracks(this.playlist);
                             }
                         }
+                    } else if (source === 'explore') {
+                        // For explore items:
+                        // - اگر پلی‌لیست دایرکتوری لود شده (isDirectoryPlaylist)، بر اساس id در this.playlist پیدا کن
+                        // - در غیر این صورت، مستقیماً از خود آبجکت track پخش کن
+                        if (this.isDirectoryPlaylist && this.playlist && this.playlist.length > 0) {
+                            const trackIndex = this.playlist.findIndex(t => t.id === track.id);
+                            if (trackIndex !== -1) {
+                                this.currentIndex = trackIndex;
+                                this.loadAndPlay(this.playlist[trackIndex]);
+                            } else {
+                                this.loadAndPlay(track);
+                            }
+                        } else {
+                            this.loadAndPlay(track);
+                        }
+                    } else if (source === 'home') {
+                        // For home page (recent tracks), play directly from track object
+                        this.loadAndPlay(track);
                     } else {
+                        if (!trackIdStr) return;
+                        const trackId = parseInt(trackIdStr);
+                        if (isNaN(trackId)) return;
                         this.playTrack(trackId, source);
                     }
                 } else if (action === 'remove') {
@@ -1052,6 +1140,12 @@ class MusicPlayer {
             this.playerBarProgressHandle.style.left = '0%';
         }
         
+        // اگر در صفحه جزییات پلی‌لیست هستیم، وضعیت فعال (سبز) را به‌روز کن
+        if (this.playlistTracksContainer && this.playlist && this.playlist.length > 0) {
+            // بر اساس this.currentIndex، کلاس active روی آیتم‌ها تنظیم می‌شود
+            this.displayPlaylistTracks(this.playlist);
+        }
+        
         // Update current track image
         const currentImageEl = document.getElementById('currentTrackImage');
         if (currentImageEl) {
@@ -1060,6 +1154,13 @@ class MusicPlayer {
         
         // Check if URL is a direct audio file (from data-music attribute)
         const audioUrl = track.url;
+        
+        // Check if this is a directory track with direct MP3 URL (before error handling)
+        const isDirectoryTrack = this.isDirectoryPlaylist && 
+                                 track.url && 
+                                 (track.url.endsWith('.mp3') || track.url.endsWith('.m4a') || track.url.endsWith('.ogg')) &&
+                                 track.pageUrl === track.url; // pageUrl همان url است یعنی از دایرکتوری آمده
+        
         const isDirectAudio = audioUrl && (
             audioUrl.endsWith('.mp3') || 
             audioUrl.endsWith('.m4a') || 
@@ -1073,6 +1174,9 @@ class MusicPlayer {
         if (isDirectAudio) {
             // Direct audio URL - try to use it directly
             console.log('Using direct audio URL:', audioUrl);
+            if (isDirectoryTrack) {
+                console.log('This is a directory track with direct MP3 URL');
+            }
             
             // First, try without CORS (some servers allow it)
             this.audioPlayer.crossOrigin = null;
@@ -1084,11 +1188,26 @@ class MusicPlayer {
                 if (errorHandled) return;
                 errorHandled = true;
                 
-                console.log('Audio error detected, trying CORS proxy...', e);
+                console.log('Audio error detected:', e);
                 
-                // Try CORS proxy - use a service that supports audio streaming
-                // Note: Most CORS proxies don't work well with audio, so we'll extract from page
-                if (track.pageUrl) {
+                // اگر track از دایرکتوری آمده و مستقیماً MP3 است، نباید extractAudioFromPage صدا بزنیم
+                if (isDirectoryTrack) {
+                    console.log('Directory track with direct MP3 URL failed, trying with CORS...');
+                    // Try one more time with CORS enabled
+                    this.audioPlayer.crossOrigin = 'anonymous';
+                    this.audioPlayer.src = audioUrl;
+                    
+                    this.audioPlayer.addEventListener('error', () => {
+                        console.error('CORS still failing for directory track');
+                        this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
+                    }, { once: true });
+                    
+                    this.audioPlayer.play().catch(() => {
+                        this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
+                    });
+                } else if (track.pageUrl) {
+                    // Try CORS proxy - use a service that supports audio streaming
+                    // Note: Most CORS proxies don't work well with audio, so we'll extract from page
                     console.log('Extracting audio from page URL...');
                     this.extractAudioFromPage(track);
                 } else {
@@ -1151,22 +1270,29 @@ class MusicPlayer {
         this.extractAudioUrl(pageUrl).then(url => {
             this.showLoading(false);
             if (url) {
-                console.log('Extracted audio URL:', url);
-                this.audioPlayer.crossOrigin = 'anonymous';
-                this.audioPlayer.src = url;
-                this.cacheAudio(url);
-                this.audioPlayer.play().then(() => {
-                    // Add to recent tracks when play succeeds
-                    this.addToRecentTracks(track);
-                }).catch(err => {
-                    console.error('Play error:', err);
-                    this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
-                });
-                // Show bottom player bar - player section is in playerPage
-                if (this.bottomPlayerBar) {
-                    this.bottomPlayerBar.style.display = 'block';
+                // Check if URL is a directory marker
+                if (url.startsWith('DIRECTORY:')) {
+                    const directoryUrl = url.replace('DIRECTORY:', '');
+                    console.log('Detected directory URL, loading playlist:', directoryUrl);
+                    this.loadDirectoryPlaylist(directoryUrl, track);
+                } else {
+                    console.log('Extracted audio URL:', url);
+                    this.audioPlayer.crossOrigin = 'anonymous';
+                    this.audioPlayer.src = url;
+                    this.cacheAudio(url);
+                    this.audioPlayer.play().then(() => {
+                        // Add to recent tracks when play succeeds
+                        this.addToRecentTracks(track);
+                    }).catch(err => {
+                        console.error('Play error:', err);
+                        this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
+                    });
+                    // Show bottom player bar - player section is in playerPage
+                    if (this.bottomPlayerBar) {
+                        this.bottomPlayerBar.style.display = 'block';
+                    }
+                    this.updatePlayButton();
                 }
-                this.updatePlayButton();
             } else {
                 this.showError('نمی‌توان موزیک را پخش کرد. لطفا موزیک دیگری انتخاب کنید.');
             }
@@ -1178,87 +1304,289 @@ class MusicPlayer {
     }
 
     async extractAudioUrl(pageUrl) {
+        console.log('extractAudioUrl called with pageUrl:', pageUrl);
         try {
-            // Try primary CORS proxy
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
-            let response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                // Try alternative proxy
-                proxyUrl = `https://corsproxy.io/?${encodeURIComponent(pageUrl)}`;
-                response = await fetch(proxyUrl);
-            }
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
+            // Use multiple CORS proxies in parallel with short timeouts (robust for podcasts)
+            const proxyPromises = [
+                (async () => {
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        if (response.headers.get('content-type')?.includes('application/json')) {
+                            const data = await response.json();
+                            return data.contents;
+                        }
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })(),
+                (async () => {
+                    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })()
+            ];
+
             let html;
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const data = await response.json();
-                html = data.contents;
-            } else {
-                html = await response.text();
+            try {
+                // Fastest successful proxy
+                html = await Promise.race(proxyPromises);
+            } catch {
+                // Fallback: first fulfilled result
+                const results = await Promise.allSettled(proxyPromises);
+                const fulfilled = results.find(r => r.status === 'fulfilled');
+                if (!fulfilled) {
+                    throw new Error('All proxies failed for extractAudioUrl');
+                }
+                html = fulfilled.value;
             }
-            
+
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
+            
+            console.log(`extractAudioUrl: Parsed HTML for ${pageUrl}, document title: ${doc.title || 'N/A'}`);
             
             // Method 1: Check for data-music attribute (most reliable for this site)
             const playButton = doc.querySelector('div.mcpplay[data-music]');
             if (playButton) {
                 const musicUrl = playButton.getAttribute('data-music');
-                if (musicUrl) {
-                    return musicUrl.startsWith('http') ? musicUrl : `https://mytehranmusic.com${musicUrl}`;
+                if (musicUrl && musicUrl.trim() && musicUrl !== '/') {
+                    const finalUrl = musicUrl.startsWith('http') ? musicUrl : `https://mytehranmusic.com${musicUrl}`;
+                    if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
+                        console.log(`Method 1 found data-music: ${finalUrl}`);
+                        return finalUrl;
+                    }
                 }
             }
+            console.log('Method 1: No valid data-music found');
             
             // Method 2: Direct audio source tag
             const audioSource = doc.querySelector('audio source');
             if (audioSource && audioSource.src) {
-                const src = audioSource.src;
-                return src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                const src = audioSource.src.trim();
+                if (src && src !== '/' && (src.includes('.mp3') || src.includes('.m4a') || src.includes('.ogg'))) {
+                    const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                    if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
+                        console.log(`Method 2 found audio source: ${finalUrl}`);
+                        return finalUrl;
+                    }
+                }
             }
+            console.log('Method 2: No valid audio source found');
             
             // Method 3: Audio element with src
             const audioElement = doc.querySelector('audio');
             if (audioElement && audioElement.src) {
-                const src = audioElement.src;
-                return src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                const src = audioElement.src.trim();
+                if (src && src !== '/' && (src.includes('.mp3') || src.includes('.m4a') || src.includes('.ogg'))) {
+                    const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                    if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
+                        console.log(`Method 3 found audio element: ${finalUrl}`);
+                        return finalUrl;
+                    }
+                }
             }
+            console.log('Method 3: No valid audio element found');
             
             // Method 4: Data attributes (fallback)
             const dataAudio = doc.querySelector('[data-audio], [data-src], [data-mp3]');
             if (dataAudio) {
-                const src = dataAudio.getAttribute('data-audio') || 
+                const src = (dataAudio.getAttribute('data-audio') || 
                            dataAudio.getAttribute('data-src') || 
-                           dataAudio.getAttribute('data-mp3');
-                if (src) {
-                    return src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                           dataAudio.getAttribute('data-mp3') || '').trim();
+                if (src && src !== '/' && (src.includes('.mp3') || src.includes('.m4a') || src.includes('.ogg'))) {
+                    const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
+                    if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
+                        console.log(`Method 4 found data attribute: ${finalUrl}`);
+                        return finalUrl;
+                    }
+                }
+            }
+            console.log('Method 4: No valid data attributes found');
+            
+            // Method 5: Look for download links (prioritize 320, then 128)
+            // First, collect all download links with quality indicators
+            // Try multiple selectors to find download links
+            const allDownloadLinks1 = doc.querySelectorAll('a[href*="dl.mytehranmusic.com"]');
+            const allDownloadLinks2 = doc.querySelectorAll('a[href*="download"]');
+            const allDownloadLinks3 = doc.querySelectorAll('a[href*=".mp3"], a[href*=".m4a"], a[href*=".ogg"]');
+            
+            // Combine all links (remove duplicates)
+            const linkSet = new Set();
+            [...allDownloadLinks1, ...allDownloadLinks2, ...allDownloadLinks3].forEach(link => {
+                const href = link.href || link.getAttribute('href');
+                if (href) linkSet.add(link);
+            });
+            
+            // Also check for links with text containing quality indicators
+            const allLinks = doc.querySelectorAll('a[href]');
+            allLinks.forEach(link => {
+                const text = (link.textContent || '').toLowerCase();
+                const href = link.href || link.getAttribute('href');
+                if (href && (text.includes('320') || text.includes('128') || text.includes('mp3') || text.includes('دانلود'))) {
+                    linkSet.add(link);
+                }
+            });
+            
+            const allDownloadLinks = Array.from(linkSet);
+            const downloadLinks320 = [];
+            const downloadLinks128 = [];
+            const otherDownloadLinks = [];
+            
+            console.log(`Method 5: Found ${allDownloadLinks.length} potential download links on page: ${pageUrl}`);
+            console.log(`  - dl.mytehranmusic.com: ${allDownloadLinks1.length}`);
+            console.log(`  - containing "download": ${allDownloadLinks2.length}`);
+            console.log(`  - containing .mp3/.m4a/.ogg: ${allDownloadLinks3.length}`);
+            console.log(`  - total unique: ${allDownloadLinks.length}`);
+            
+            for (const link of allDownloadLinks) {
+                const href = link.href || link.getAttribute('href');
+                if (!href) continue;
+                
+                const linkText = (link.textContent || '').toLowerCase().trim();
+
+                // Skip ZIP archive links (e.g. "320 ZIP", ".zip" files)
+                if (linkText.includes('zip') || href.toLowerCase().includes('.zip')) {
+                    console.log(`Skipping ZIP link: "${linkText}" -> ${href}`);
+                    continue;
+                }
+
+                // Normalize href - handle relative URLs
+                let normalizedHref;
+                if (href.startsWith('http')) {
+                    normalizedHref = href;
+                } else if (href.startsWith('//')) {
+                    normalizedHref = 'https:' + href;
+                } else if (href.startsWith('/')) {
+                    normalizedHref = 'https://mytehranmusic.com' + href;
+                } else {
+                    normalizedHref = 'https://mytehranmusic.com/' + href;
+                }
+                
+                // Skip if normalized to root URL (invalid)
+                if (normalizedHref === 'https://mytehranmusic.com/' || normalizedHref === 'https://mytehranmusic.com') {
+                    console.warn(`Skipping invalid normalized href: ${href} -> ${normalizedHref}`);
+                    continue;
+                }
+                
+                console.log(`Processing download link: "${linkText}" -> ${normalizedHref}`);
+                
+                // Check if it's a direct .mp3/.m4a/.ogg file
+                if (normalizedHref.includes('.mp3') || normalizedHref.includes('.m4a') || normalizedHref.includes('.ogg')) {
+                    if (linkText.includes('320') || normalizedHref.includes('320')) {
+                        downloadLinks320.push(normalizedHref);
+                        console.log(`Added 320 link: ${normalizedHref}`);
+                    } else if (linkText.includes('128') || normalizedHref.includes('128')) {
+                        downloadLinks128.push(normalizedHref);
+                        console.log(`Added 128 link: ${normalizedHref}`);
+                    } else {
+                        otherDownloadLinks.push(normalizedHref);
+                        console.log(`Added other quality link: ${normalizedHref}`);
+                    }
+                } else if (normalizedHref.includes('dl.mytehranmusic.com')) {
+                    // This is a directory link - we'll handle it specially
+                    // Pattern: https://dl.mytehranmusic.com/music/1404/08/03/Top%20Music%20-%20Mehr%201404/
+                    const baseDir = normalizedHref.endsWith('/') ? normalizedHref : normalizedHref + '/';
+                    
+                    console.log(`Found directory link (${linkText}): ${baseDir}`);
+                    
+                    // Store directory URL with a special marker to indicate it's a directory
+                    // Priority: 320 first, then 128
+                    if (linkText.includes('320')) {
+                        // Return special marker for directory - we'll handle it in extractAudioFromPage
+                        console.log(`Returning directory URL (320): ${baseDir}`);
+                        return `DIRECTORY:${baseDir}`;
+                    } else if (linkText.includes('128')) {
+                        console.log(`Returning directory URL (128): ${baseDir}`);
+                        return `DIRECTORY:${baseDir}`;
+                    } else {
+                        // No quality specified - prefer 320
+                        console.log(`Returning directory URL (no quality specified): ${baseDir}`);
+                        return `DIRECTORY:${baseDir}`;
+                    }
                 }
             }
             
-            // Method 5: Look for download links with .mp3 or .m4a
-            const downloadLinks = doc.querySelectorAll('a[href*=".mp3"], a[href*=".m4a"], a[href*=".ogg"], a[download]');
-            for (const link of downloadLinks) {
-                const href = link.href || link.getAttribute('href');
-                if (href && (href.includes('.mp3') || href.includes('.m4a') || href.includes('.ogg'))) {
-                    return href.startsWith('http') ? href : `https://mytehranmusic.com${href}`;
+            console.log(`Collected links - 320: ${downloadLinks320.length}, 128: ${downloadLinks128.length}, other: ${otherDownloadLinks.length}`);
+            
+            // Priority: 320 first, then 128, then others
+            if (downloadLinks320.length > 0) {
+                console.log('Trying 320 quality links...');
+                for (const url of downloadLinks320) {
+                    // Validate URL format - must be a real audio file URL, not root domain
+                    if (url && 
+                        url !== 'https://mytehranmusic.com/' && 
+                        url !== 'https://mytehranmusic.com' &&
+                        (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
+                        console.log(`Returning 320 URL: ${url}`);
+                        return url;
+                    }
                 }
             }
+            
+            if (downloadLinks128.length > 0) {
+                console.log('Trying 128 quality links...');
+                for (const url of downloadLinks128) {
+                    if (url && 
+                        url !== 'https://mytehranmusic.com/' && 
+                        url !== 'https://mytehranmusic.com' &&
+                        (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
+                        console.log(`Returning 128 URL: ${url}`);
+                        return url;
+                    }
+                }
+            }
+            
+            // Fallback to other download links
+            if (otherDownloadLinks.length > 0) {
+                console.log('Trying other quality links...');
+                for (const url of otherDownloadLinks) {
+                    if (url && 
+                        url !== 'https://mytehranmusic.com/' && 
+                        url !== 'https://mytehranmusic.com' &&
+                        (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
+                        console.log(`Returning other quality URL: ${url}`);
+                        return url;
+                    }
+                }
+            }
+            
+            console.warn('No valid download links found in Method 5');
             
             // Method 6: Look in script tags for audio URLs
             const scripts = doc.querySelectorAll('script');
             for (const script of scripts) {
                 const content = script.textContent || script.innerHTML;
-                // Look for URLs ending with audio extensions or dl.mytehranmusic.com
-                const audioUrlMatch = content.match(/https?:\/\/[^\s"']+\.(mp3|m4a|ogg)/i) ||
-                                     content.match(/https?:\/\/dl\.mytehranmusic\.com[^\s"']+/i);
-                if (audioUrlMatch) {
+                // Look for URLs ending with audio extensions (must end with .mp3/.m4a/.ogg)
+                const audioUrlMatch = content.match(/https?:\/\/[^\s"']+\.(mp3|m4a|ogg)(?:\?[^\s"']*)?/i);
+                if (audioUrlMatch && audioUrlMatch[0] && !audioUrlMatch[0].endsWith('/')) {
+                    console.log(`Method 6 found audio URL in script: ${audioUrlMatch[0]}`);
                     return audioUrlMatch[0];
+                }
+                // Also look for dl.mytehranmusic.com URLs that end with .mp3
+                const dlMatch = content.match(/https?:\/\/dl\.mytehranmusic\.com[^\s"']+\.(mp3|m4a|ogg)(?:\?[^\s"']*)?/i);
+                if (dlMatch && dlMatch[0] && !dlMatch[0].endsWith('/')) {
+                    console.log(`Method 6 found dl.mytehranmusic.com URL in script: ${dlMatch[0]}`);
+                    return dlMatch[0];
                 }
             }
             
+            console.warn(`extractAudioUrl: No audio URL found for ${pageUrl}, returning null`);
             return null;
         } catch (error) {
             console.error('Error extracting audio URL:', error);
@@ -1461,21 +1789,275 @@ class MusicPlayer {
         }
     }
 
+    // Load playlist from directory (Index of page)
+    async loadDirectoryPlaylist(directoryUrl, originalTrack) {
+        this.showLoading(true);
+        console.log('Loading directory playlist from:', directoryUrl);
+        
+        try {
+            // چند مسیر مختلف برای دور زدن CORS (مشابه extractAudioUrl)
+            const fetchCandidates = [
+                // 1) مستقیماً خود URL (اگر از روی https هاست شود ممکن است کار کند)
+                { type: 'direct', url: directoryUrl },
+                // 2) allorigins
+                { type: 'allorigins', url: `https://api.allorigins.win/get?url=${encodeURIComponent(directoryUrl)}` },
+                // 3) codetabs
+                { type: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(directoryUrl)}` }
+            ];
+            
+            let html = null;
+            let lastError = null;
+            
+            for (const candidate of fetchCandidates) {
+                try {
+                    console.log(`Trying directory fetch via ${candidate.type}:`, candidate.url);
+                    const response = await fetch(candidate.url);
+                    
+                    if (!response.ok) {
+                        lastError = new Error(`HTTP error from ${candidate.type}! status: ${response.status}`);
+                        console.warn(lastError);
+                        continue;
+                    }
+                    
+                    if (candidate.type === 'allorigins') {
+                        const data = await response.json();
+                        html = data.contents;
+                    } else if (candidate.type === 'codetabs') {
+                        html = await response.text();
+                    } else {
+                        // direct
+                        html = await response.text();
+                    }
+                    
+                    if (html) {
+                        console.log(`Directory HTML fetched successfully via ${candidate.type}`);
+                        break;
+                    }
+                } catch (err) {
+                    console.warn(`Directory fetch failed via ${candidate.type}:`, err);
+                    lastError = err;
+                    continue;
+                }
+            }
+            
+            if (!html) {
+                throw lastError || new Error('Failed to fetch directory HTML via all methods');
+            }
+            
+            // Parse directory listing HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Find all .mp3 links in the directory listing
+            // Directory listings typically have links like: <a href="filename.mp3">filename.mp3</a>
+            const mp3Links = doc.querySelectorAll('a[href$=".mp3"], a[href*=".mp3"]');
+            const tracks = [];
+            
+            console.log(`Found ${mp3Links.length} MP3 files in directory`);
+            
+            mp3Links.forEach((link, index) => {
+                // همیشه ابتدا مقدار خام attribute را بگیر تا به localhost resolve نشود
+                let href = link.getAttribute('href') || link.href;
+                if (!href || href.includes('..') || href === '../' || href === '..') return; // Skip parent directory links
+                
+                // Decode URL-encoded characters
+                try {
+                    href = decodeURIComponent(href);
+                } catch (e) {
+                    // If decoding fails, use original href
+                }
+                
+                // Construct full URL
+                let fullUrl;
+                if (href.startsWith('http://') || href.startsWith('https://')) {
+                    fullUrl = href;
+                } else {
+                    // Handle relative URLs - use URL constructor for proper resolution
+                    try {
+                        // اگر href با / شروع می‌شود، از root دامنه استفاده می‌کنیم
+                        if (href.startsWith('/')) {
+                            // Extract base URL from directoryUrl (e.g., https://dl.mytehranmusic.com)
+                            const baseUrl = new URL(directoryUrl).origin;
+                            fullUrl = baseUrl + href;
+                        } else {
+                            // Relative URL - combine with directoryUrl
+                            const dirUrlObj = new URL(directoryUrl);
+                            // Ensure directoryUrl ends with / for proper resolution
+                            const baseDir = dirUrlObj.href.endsWith('/') ? dirUrlObj.href : dirUrlObj.href + '/';
+                            fullUrl = new URL(href, baseDir).href;
+                        }
+                    } catch (e) {
+                        // Fallback: simple string concatenation
+                        console.warn('URL constructor failed, using fallback:', e);
+                        const cleanHref = href.startsWith('/') ? href.substring(1) : href;
+                        const baseDir = directoryUrl.endsWith('/') ? directoryUrl : directoryUrl + '/';
+                        fullUrl = baseDir + cleanHref;
+                    }
+                }
+                
+                // Ensure fullUrl is a valid absolute URL
+                if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+                    console.error('Invalid URL constructed:', fullUrl, 'from href:', href, 'directoryUrl:', directoryUrl);
+                    return; // Skip this track
+                }
+                
+                console.log(`Constructed full URL: ${fullUrl} from href: ${href}`);
+                
+                // Extract title from filename (prefer textContent, fallback to href)
+                let title = (link.textContent || link.innerText || href).trim();
+                
+                // Remove .mp3 extension if present
+                if (title.endsWith('.mp3')) {
+                    title = title.substring(0, title.length - 4);
+                }
+                
+                // Also decode title if it's URL-encoded
+                try {
+                    title = decodeURIComponent(title);
+                } catch (e) {
+                    // If decoding fails, use original title
+                }
+                
+                // Try to parse "Artist - Song Title" format
+                let artist = 'نامشخص';
+                let songTitle = title;
+                if (title.includes(' - ')) {
+                    const parts = title.split(' - ');
+                    if (parts.length >= 2) {
+                        artist = parts[0].trim();
+                        songTitle = parts.slice(1).join(' - ').trim();
+                    }
+                }
+                
+                // Create track object
+                const trackObj = {
+                    id: Date.now() + index,
+                    title: songTitle,
+                    artist: artist,
+                    url: fullUrl,
+                    image: originalTrack?.image || '',
+                    pageUrl: fullUrl
+                };
+                
+                tracks.push(trackObj);
+                console.log(`Added track: ${artist} - ${songTitle} (${fullUrl})`);
+            });
+            
+            if (tracks.length === 0) {
+                this.showLoading(false);
+                this.showError('هیچ فایل صوتی در این دایرکتوری یافت نشد');
+                return;
+            }
+            
+            // Set as current playlist (but don't auto-play; let user choose a track)
+            this.playlist = tracks;
+            this.currentIndex = -1;
+            this.currentPlaylistId = null; // Not a custom playlist
+            
+            // Save playlist
+            this.savePlaylist();
+            
+            // Set flag to indicate this is a directory playlist
+            this.isDirectoryPlaylist = true;
+            
+            // اول صفحه را نمایش بده (با spinner)
+            // Hide all pages
+            Object.values(this.pages).forEach(p => {
+                if (p) {
+                    p.classList.remove('active');
+                    p.style.display = 'none';
+                    p.style.visibility = 'hidden';
+                }
+            });
+            
+            // Show playlist detail page with loading spinner
+            if (this.playlistDetailPage) {
+                this.playlistDetailPage.classList.add('active');
+                this.playlistDetailPage.style.display = 'block';
+                this.playlistDetailPage.style.visibility = 'visible';
+                
+                // Set title
+                const titleEl = document.getElementById('playlistDetailTitle');
+                if (titleEl) {
+                    titleEl.textContent = originalTrack?.title || 'پلی‌لیست';
+                }
+                
+                // Show loading spinner in container
+                if (this.playlistTracksContainer) {
+                    this.playlistTracksContainer.innerHTML = `
+                        <div style="display: flex; justify-content: center; align-items: center; padding: 60px 20px;">
+                            <div class="spinner"></div>
+                        </div>
+                    `;
+                }
+            }
+            
+            // بعد از یک تاخیر کوتاه (برای UX بهتر)، لیست را populate کن
+            setTimeout(() => {
+                // Display tracks
+                this.displayPlaylistTracks(tracks);
+                
+                this.showLoading(false);
+                
+                // Show success message
+                this.showToast(`پلی‌لیست با ${tracks.length} آهنگ بارگذاری شد. برای پخش، روی یکی از آهنگ‌ها کلیک کنید.`, 'success');
+            }, 300);
+            
+            // شبیه صفحه جزییات پلی‌لیست‌های اصلی (کد قدیمی - حذف شد):
+            // تمام صفحات اصلی را مخفی کن
+            Object.values(this.pages).forEach(p => {
+                if (p) {
+                    p.classList.remove('active');
+                    p.style.display = 'none';
+                    p.style.visibility = 'hidden';
+                }
+            });
+            
+            // نمایش صفحه جزئیات پلی‌لیست
+            if (this.playlistDetailPage) {
+                this.playlistDetailPage.classList.add('active');
+                this.playlistDetailPage.style.display = 'block';
+                this.playlistDetailPage.style.visibility = 'visible';
+                
+                // عنوان بالای صفحه
+                const titleEl = document.getElementById('playlistDetailTitle');
+                if (titleEl) {
+                    titleEl.textContent = originalTrack?.title || 'پلی‌لیست';
+                }
+                
+                // نمایش ترک‌ها با همان استایل playlist-detail
+                this.displayPlaylistTracks(tracks);
+            }
+            
+        } catch (error) {
+            this.showLoading(false);
+            console.error('Error loading directory playlist:', error);
+            this.showError('خطا در بارگذاری پلی‌لیست. لطفا دوباره تلاش کنید.');
+        }
+    }
+
     async cacheAudio(audioUrl) {
-        // Cache audio file using Service Worker
+        // Cache audio file using Service Worker (optional optimization)
+        if (!audioUrl) return;
+
         if ('serviceWorker' in navigator && 'caches' in window) {
             try {
+                // Only attempt to cache same-origin assets to avoid CORS errors in dev
+                const urlObj = new URL(audioUrl, window.location.href);
+                if (urlObj.origin !== window.location.origin) {
+                    // Skip caching for cross-origin audio (will still play, فقط کش نمی‌شود)
+                    return;
+                }
+
                 const cache = await caches.open('mytehran-audio-v1');
-                // Check if already cached
                 const cached = await cache.match(audioUrl);
                 if (!cached) {
-                    // Fetch and cache the audio
                     await cache.add(audioUrl);
-                    console.log('Audio cached:', audioUrl);
+                    console.debug('Audio cached:', audioUrl);
                 }
             } catch (error) {
-                console.warn('Failed to cache audio:', error);
-                // Don't show error to user, caching is optional
+                // در محیط‌های لوکال/بدون SW ممکن است خطا رخ دهد؛ نادیده می‌گیریم
+                console.debug('Failed to cache audio (ignored):', error);
             }
         }
     }
@@ -2232,6 +2814,567 @@ class MusicPlayer {
         } else if (page === 'search') {
             // Ensure search history is displayed
             this.displaySearchHistory();
+        } else if (page === 'explore') {
+            this.loadExploreData();
+        }
+    }
+
+    // Load explore page data (latest, top monthly, podcasts)
+    async loadExploreData() {
+        try {
+        await Promise.all([
+            this.loadLatestTracks(),
+            this.loadTopMonthly(),
+            this.loadPodcasts()
+        ]);
+        } catch (e) {
+            console.error('Error loading explore data:', e);
+        }
+    }
+    
+    // Fetch and parse explore items from a URL with proxy and retry logic
+    async fetchExploreItems(url, limit = 5, retryCount = 0, maxRetries = 1) {
+        const proxyServices = [
+            {
+                name: 'allorigins',
+                getUrl: (targetUrl) => `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+                parseResponse: async (response) => {
+                    if (response.headers.get('content-type')?.includes('application/json')) {
+                        const data = await response.json();
+                        return data.contents;
+                    }
+                    return await response.text();
+                }
+            },
+            {
+                name: 'proxy',
+                getUrl: (targetUrl) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+                parseResponse: async (response) => await response.text()
+            }
+        ];
+        
+        const proxyPromises = proxyServices.map(async (proxy) => {
+            const proxyUrl = proxy.getUrl(url);
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                
+                const response = await fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    },
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const html = await proxy.parseResponse(response);
+                if (!html || html.trim().length === 0) {
+                    throw new Error('Empty response from proxy');
+                }
+                
+                return { html, success: true };
+            } catch (error) {
+                return { error, success: false };
+            }
+        });
+        
+        try {
+            const raceResult = await Promise.race(proxyPromises);
+            if (raceResult.success) {
+                const parsedResult = this.parseExploreItems(raceResult.html, limit);
+                if (limit === 5 && parsedResult.items.length > 0) {
+                    this.cacheExploreItems(url, parsedResult.items);
+                }
+                return parsedResult;
+            }
+        } catch {
+            // ignore and fall back to allSettled
+        }
+        
+        const results = await Promise.allSettled(proxyPromises);
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.success) {
+                const parsedResult = this.parseExploreItems(result.value.html, limit);
+                if (limit === 5 && parsedResult.items.length > 0) {
+                    this.cacheExploreItems(url, parsedResult.items);
+                }
+                return parsedResult;
+            }
+        }
+        
+        if (retryCount < maxRetries) {
+            const delay = 200;
+            console.warn(`All proxies failed for ${url} (attempt ${retryCount + 1}/${maxRetries}), retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.fetchExploreItems(url, limit, retryCount + 1, maxRetries);
+        }
+        
+        console.error(`All proxy services failed for ${url} after ${retryCount + 1} attempts`);
+        return { items: [], hasMore: false };
+    }
+    
+    // Parse explore items from HTML
+    parseExploreItems(html, limit = 5) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
+        
+        let gridItems = doc.querySelectorAll('div.grid-item');
+        if (gridItems.length === 0) {
+            gridItems = doc.querySelectorAll('article, .post-item, .item, [class*="grid"], [class*="item"]');
+        }
+        
+        gridItems.forEach((gridItem, index) => {
+            if (index >= limit) return;
+            
+            let playButton = gridItem.querySelector('div.mcpplay');
+            if (!playButton) {
+                playButton = gridItem.querySelector('[data-music], [data-track], .play-button, [class*="play"]');
+            }
+            
+            if (!playButton) {
+                if (gridItem.hasAttribute('data-music') || gridItem.hasAttribute('data-track')) {
+                    playButton = gridItem;
+                }
+            }
+            
+            const trackTitle = playButton ? (playButton.getAttribute('data-track') || '') : '';
+            const artistAttr = playButton ? (playButton.getAttribute('data-artist') || '') : '';
+            const imageAttr = playButton ? (playButton.getAttribute('data-image') || '') : '';
+            const musicAttr = playButton ? (playButton.getAttribute('data-music') || '') : '';
+            
+            let title = trackTitle;
+            let artist = artistAttr || 'نامشخص';
+            let image = imageAttr;
+            let url = musicAttr;
+            let pageUrl = '';
+            
+            if (!title) {
+                let titleEl = gridItem.querySelector('div.title a, h2 a, h3 a, .title a, [class*="title"] a');
+                if (!titleEl) titleEl = gridItem.querySelector('div.title, h2, h3, .title, [class*="title"]');
+                if (titleEl) title = titleEl.textContent.trim();
+            }
+            
+            let finalArtist = artist;
+            if (!finalArtist || finalArtist === 'نامشخص') {
+                let artistEl = gridItem.querySelector('div.artist a, .artist a, [class*="artist"] a');
+                if (!artistEl) artistEl = gridItem.querySelector('div.artist, .artist, [class*="artist"]');
+                if (artistEl) finalArtist = artistEl.textContent.trim();
+            }
+            
+            if (!image) {
+                let imgEl = gridItem.querySelector('div.img img, img[src*="timthumb"], img[src*="thumb"], .img img, [class*="img"] img, img');
+                if (imgEl) image = imgEl.src || imgEl.getAttribute('src') || imgEl.getAttribute('data-src') || '';
+            }
+            
+            let pageLink = gridItem.querySelector('div.title a, div.img a, h2 a, h3 a, a[href*="/"]');
+            if (!pageLink) {
+                pageLink = gridItem.querySelector('a[href]');
+            }
+            if (pageLink) {
+                pageUrl = pageLink.href || pageLink.getAttribute('href') || '';
+                if (pageUrl && !pageUrl.startsWith('http')) {
+                    pageUrl = `https://mytehranmusic.com${pageUrl}`;
+                }
+                console.log(`parseExploreItems: Found pageUrl for "${title}": ${pageUrl}`);
+            }
+            
+            if (!url && pageUrl) {
+                url = pageUrl;
+                console.log(`parseExploreItems: Using pageUrl as url: ${url}`);
+            }
+            
+            if (image && !image.startsWith('http') && !image.startsWith('data:')) {
+                if (image.startsWith('//')) image = 'https:' + image;
+                else if (image.startsWith('/')) image = 'https://mytehranmusic.com' + image;
+                else image = 'https://mytehranmusic.com/' + image;
+            }
+            
+            if (url && !url.startsWith('http') && !url.startsWith('data:')) {
+                if (url.startsWith('//')) url = 'https:' + url;
+                else if (url.startsWith('/')) url = 'https://mytehranmusic.com' + url;
+                else url = 'https://mytehranmusic.com/' + url;
+            }
+            
+            if (!title || !url) {
+                return;
+                    }
+                    
+                    results.push({
+                id: url,
+                title: title,
+                artist: finalArtist,
+                image: image,
+                url: url,
+                pageUrl: pageUrl
+            });
+        });
+
+        const hasMore = results.length >= limit;
+        return { items: results, hasMore };
+    }
+    
+    // Load latest tracks section
+    async loadLatestTracks() {
+        if (!this.latestTracksList) return;
+        
+        const url = 'https://mytehranmusic.com/';
+        
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            this.renderExploreItems(this.latestTracksList, cached, true, 'latest');
+            this.latestTracksList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.latestTracksList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        const { items, hasMore } = await this.fetchExploreItems(url, 5);
+        
+        const loadingEl = this.latestTracksList.querySelector('.explore-loading-inline');
+        if (loadingEl) loadingEl.remove();
+        
+        if (this.hasItemsChanged(cached, items)) {
+            this.renderExploreItems(this.latestTracksList, items, hasMore, 'latest');
+        }
+    }
+    
+    // Load top monthly section
+    async loadTopMonthly() {
+        if (!this.topMonthlyList) return;
+        
+        const url = 'https://mytehranmusic.com/top-month-tehranmusic/';
+        
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            this.renderExploreItems(this.topMonthlyList, cached, true, 'topMonthly');
+            this.topMonthlyList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.topMonthlyList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        try {
+            const { items, hasMore } = await this.fetchExploreItems(url, 5);
+            
+            const loadingEl = this.topMonthlyList.querySelector('.explore-loading-inline');
+            if (loadingEl) loadingEl.remove();
+            
+            if (items && items.length > 0) {
+                if (this.hasItemsChanged(cached, items)) {
+                    this.renderExploreItems(this.topMonthlyList, items, hasMore, 'topMonthly');
+                }
+            } else if (!cached || cached.length === 0) {
+                this.topMonthlyList.innerHTML = '<div class="explore-loading"><p>موردی یافت نشد</p></div>';
+            }
+        } catch (error) {
+            console.error('Error loading top monthly tracks:', error);
+            const loadingEl = this.topMonthlyList.querySelector('.explore-loading-inline');
+            if (loadingEl) loadingEl.remove();
+            
+            if (!cached || cached.length === 0) {
+                this.topMonthlyList.innerHTML = '<div class="explore-loading"><p>خطا در بارگذاری</p></div>';
+            }
+        }
+    }
+    
+    // Load podcasts section
+    async loadPodcasts() {
+        if (!this.podcastsList) return;
+        
+        const url = 'https://mytehranmusic.com/podcasts/';
+        
+        const cached = this.getCachedExploreItems(url);
+        if (cached && cached.length > 0) {
+            this.renderExploreItems(this.podcastsList, cached, true, 'podcasts');
+            this.podcastsList.insertAdjacentHTML('afterbegin', '<div class="explore-loading-inline"><div class="spinner spinner-small"></div></div>');
+        } else {
+            this.podcastsList.innerHTML = '<div class="explore-loading"><div class="spinner spinner-small"></div></div>';
+        }
+        
+        const { items, hasMore } = await this.fetchExploreItems(url, 5);
+        
+        const loadingEl = this.podcastsList.querySelector('.explore-loading-inline');
+        if (loadingEl) loadingEl.remove();
+        
+        if (this.hasItemsChanged(cached, items)) {
+            this.renderExploreItems(this.podcastsList, items, hasMore, 'podcasts');
+        }
+    }
+    
+    // Render explore items horizontally
+    renderExploreItems(container, items, hasMore, type) {
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        items.forEach(track => {
+            const trackEl = this.createExploreItem(track, type);
+            container.appendChild(trackEl);
+        });
+        
+        if (hasMore) {
+            const viewMoreBtn = document.createElement('div');
+            viewMoreBtn.className = 'explore-view-more';
+            viewMoreBtn.innerHTML = `
+                <div class="explore-view-more-content">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 4l1.41 1.41L7.83 11H20v2H7.83l5.58 5.59L12 20l-8-8z"/>
+                    </svg>
+                    <span>مشاهده بیشتر</span>
+                </div>
+            `;
+            viewMoreBtn.addEventListener('click', () => {
+                this.openExploreDetail(type);
+            });
+            container.appendChild(viewMoreBtn);
+        }
+    }
+    
+    // Create explore item element (reuse track card)
+    // type: 'latest' | 'topMonthly' | 'podcasts'
+    createExploreItem(track, type = 'explore') {
+        // برای برترین‌های ماه، یک کارت ساده بدون دکمه‌های play/delete می‌خواهیم
+        const source = type === 'topMonthly' ? 'explore-top' : 'explore';
+        const el = this.createTrackElement(track, source);
+        
+        if (type === 'topMonthly') {
+            // روی کل باکس کلیک شود → پلی‌لیست دایرکتوری باز شود
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // از همان مکانیزم extractAudioFromPage استفاده می‌کنیم
+                this.extractAudioFromPage(track);
+            });
+        }
+        
+        return el;
+    }
+    
+    // Open explore detail page
+    openExploreDetail(type) {
+        this.isDirectoryPlaylist = false; // Reset flag - this is a regular explore detail
+        this.currentExploreType = type;
+        this.currentExplorePage = 1;
+        this.navigateToPage('exploreDetail');
+        this.loadExploreDetail(type, 1);
+    }
+    
+    // Load explore detail page with infinite scroll
+    async loadExploreDetail(type, page = 1, retryCount = 0, maxRetries = 3) {
+        // Don't load if this is a directory playlist (already loaded)
+        if (this.isDirectoryPlaylist) {
+            console.log('Skipping loadExploreDetail - showing directory playlist');
+            return;
+        }
+        if (this.exploreLoading) return;
+        
+        this.exploreLoading = true;
+        
+        if (page === 1) {
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'flex';
+            }
+            if (this.exploreDetailContainer) {
+                this.exploreDetailContainer.innerHTML = '';
+            }
+        } else if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'flex';
+        }
+        
+        let url = '';
+        let title = '';
+        
+        switch (type) {
+            case 'latest':
+                url = 'https://mytehranmusic.com/';
+                title = 'آهنگ‌های جدید';
+                break;
+            case 'topMonthly':
+                url = 'https://mytehranmusic.com/top-month-tehranmusic/';
+                title = 'برترین‌های ماه';
+                break;
+            case 'podcasts':
+                url = 'https://mytehranmusic.com/podcasts/';
+                title = 'پادکست‌ها';
+                break;
+        }
+        
+        if (this.exploreDetailTitle) {
+            this.exploreDetailTitle.textContent = title;
+        }
+        
+        if (page > 1) {
+            if (type === 'latest') {
+                url = `https://mytehranmusic.com/page/${page}/`;
+            } else if (type === 'topMonthly') {
+                url = `https://mytehranmusic.com/top-month-tehranmusic/page/${page}/`;
+            } else if (type === 'podcasts') {
+                url = `https://mytehranmusic.com/podcasts/page/${page}/`;
+            }
+        }
+        
+        try {
+            const { items, hasMore } = await this.fetchExploreItems(url, 20, 0, maxRetries);
+            this.exploreHasMore = hasMore;
+            this.currentExplorePage = page;
+            
+            if (items.length === 0 && page > 1) {
+                this.exploreHasMore = false;
+            }
+            
+            if (page === 1 && this.exploreDetailContainer) {
+                    this.exploreDetailContainer.innerHTML = '';
+            }
+            
+            items.forEach(track => {
+                const trackEl = this.createTrackElement(track, 'explore');
+                if (this.exploreDetailContainer) {
+                    this.exploreDetailContainer.appendChild(trackEl);
+                }
+            });
+            
+            if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'none';
+            }
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'none';
+            }
+            
+            this.exploreLoading = false;
+            
+            if (this.exploreHasMore && page === 1) {
+                this.setupExploreDetailInfiniteScroll();
+            }
+        } catch (error) {
+            console.error(`Error loading explore detail (attempt ${retryCount + 1}/${maxRetries}):`, error);
+            
+            if (retryCount < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+                this.exploreLoading = false;
+                return this.loadExploreDetail(type, page, retryCount + 1, maxRetries);
+            }
+            
+            if (this.exploreDetailLoadingIndicator) {
+                this.exploreDetailLoadingIndicator.style.display = 'none';
+            }
+            if (this.exploreDetailContainer) {
+                this.exploreDetailContainer.innerHTML = '<div class="explore-loading"><p>خطا در بارگذاری. لطفاً بعداً دوباره تلاش کنید.</p></div>';
+            }
+            if (this.exploreDetailInfiniteLoader) {
+                this.exploreDetailInfiniteLoader.style.display = 'none';
+            }
+            this.exploreLoading = false;
+        }
+    }
+    
+    // Setup infinite scroll for explore detail page
+    setupExploreDetailInfiniteScroll() {
+        if (this.exploreDetailScrollHandler) {
+            window.removeEventListener('scroll', this.exploreDetailScrollHandler);
+        }
+        
+        this.exploreDetailScrollHandler = () => {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            
+            if (this.exploreDetailScrollToTopBtn) {
+                if (this.currentPage === 'exploreDetail' && scrollTop > 300) {
+                    this.exploreDetailScrollToTopBtn.style.display = 'flex';
+                } else {
+                    this.exploreDetailScrollToTopBtn.style.display = 'none';
+                }
+            }
+            
+            if (!this.exploreLoading && this.exploreHasMore && scrollTop + windowHeight >= documentHeight - 200) {
+                this.loadExploreDetail(this.currentExploreType, this.currentExplorePage + 1);
+            }
+        };
+        
+        window.addEventListener('scroll', this.exploreDetailScrollHandler);
+    }
+    
+    // Cache explore items in memory and localStorage
+    cacheExploreItems(url, items) {
+        if (!items || items.length === 0) return;
+        
+        const cacheKey = this.getExploreCacheKey(url);
+        this.exploreCache[cacheKey] = {
+            items: items,
+            timestamp: Date.now()
+        };
+        this.saveExploreCache();
+    }
+    
+    getCachedExploreItems(url) {
+        const cacheKey = this.getExploreCacheKey(url);
+        const cached = this.exploreCache[cacheKey];
+        
+        if (cached && cached.items) {
+            const cacheAge = Date.now() - cached.timestamp;
+            if (cacheAge < 3600000) { // 1 hour
+                return cached.items;
+            }
+        }
+        
+        return null;
+    }
+    
+    getExploreCacheKey(url) {
+        try {
+            const urlObj = new URL(url);
+            return urlObj.origin + urlObj.pathname;
+        } catch {
+            return url.split('?')[0].split('#')[0];
+        }
+    }
+    
+    hasItemsChanged(oldItems, newItems) {
+        if (!oldItems || oldItems.length === 0) return true;
+        if (!newItems || newItems.length === 0) return false;
+        if (oldItems.length !== newItems.length) return true;
+        
+        for (let i = 0; i < Math.min(oldItems.length, newItems.length); i++) {
+            if (oldItems[i].title !== newItems[i].title || 
+                oldItems[i].artist !== newItems[i].artist) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    saveExploreCache() {
+        try {
+            const cacheToSave = {};
+            Object.keys(this.exploreCache).forEach(key => {
+                cacheToSave[key] = {
+                    items: this.exploreCache[key].items,
+                    timestamp: this.exploreCache[key].timestamp
+                };
+            });
+            localStorage.setItem('mytehranExploreCache', JSON.stringify(cacheToSave));
+        } catch (e) {
+            console.warn('Could not save explore cache:', e);
+        }
+    }
+    
+    loadExploreCache() {
+        try {
+            const cached = localStorage.getItem('mytehranExploreCache');
+            if (cached) {
+                this.exploreCache = JSON.parse(cached);
+            } else {
+                this.exploreCache = {};
+            }
+        } catch (e) {
+            console.warn('Could not load explore cache:', e);
+            this.exploreCache = {};
         }
     }
 
