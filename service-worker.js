@@ -35,6 +35,7 @@ self.addEventListener('fetch', (event) => {
   const isCorsProxy = url.hostname.includes('allorigins.win') || 
                       url.hostname.includes('codetabs.com') ||
                       url.hostname.includes('corsproxy') ||
+                      url.hostname.includes('corsproxy.io') ||
                       url.hostname.includes('cors-anywhere');
   
   if (isCorsProxy) {
@@ -42,13 +43,26 @@ self.addEventListener('fetch', (event) => {
   }
   
   // Skip service worker for code files - let browser handle them directly
-  const isCodeFile = url.pathname.match(/\.(html|css|js|json)$/i) || 
+  const isCodeFile = url.pathname.match(/\.(html|css|js|json|svg)$/i) || 
                      url.pathname === '/' ||
                      (url.pathname.endsWith('/') && url.hostname === self.location.hostname);
   
   // Don't intercept code files - let them load directly from network
+  if (isCodeFile && url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.status === 200) {
+          const clone = response.clone();
+          caches.open('mytehran-app-v1').then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+  
   if (isCodeFile) {
-    return; // Let browser handle it normally
+    return;
   }
   
   // Check if it's an audio file
@@ -57,32 +71,40 @@ self.addEventListener('fetch', (event) => {
                       url.hostname.includes('mytehranmusic.com') && url.pathname.includes('.mp3');
   
   if (isAudioFile) {
-    // Cache First strategy for audio files
+    // Audio elements use Range requests -> server returns 206. Cache API rejects 206.
+    // We cache the FULL file (request without Range) to get 200.
+    const cacheKey = new Request(event.request.url, { method: 'GET' });
     event.respondWith(
       caches.open(AUDIO_CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((cachedResponse) => {
+        return cache.match(cacheKey).then((cachedResponse) => {
           if (cachedResponse) {
-            // Return cached version
             return cachedResponse;
           }
-          
-          // Fetch from network and cache it
           return fetch(event.request).then((response) => {
-            // Only cache successful responses
+            // Cache only 200 (full file). 206 = Range request, cannot cache.
             if (response.status === 200) {
-              // Clone the response before caching
               const responseToCache = response.clone();
-              cache.put(event.request, responseToCache);
-              
-              // Clean up old cache if it gets too large
-              cleanupAudioCache();
+              cache.put(cacheKey, responseToCache).then(() => {
+                cleanupAudioCache();
+              }).catch(() => {});
+            } else if (response.status === 206 && !response.bodyUsed) {
+              // Range request: fetch full file in background for cache
+              fetch(cacheKey).then((fullRes) => {
+                if (fullRes.status === 200) {
+                  cache.put(cacheKey, fullRes).then(() => {
+                    cleanupAudioCache();
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
             }
             return response;
           }).catch(() => {
-            // If network fails and no cache, return a placeholder or error
-            return new Response('Audio not available offline', {
-              status: 503,
-              statusText: 'Service Unavailable'
+            return cache.match(cacheKey).then((cached) => {
+              if (cached) return cached;
+              return new Response('Audio not available offline', {
+                status: 503,
+                statusText: 'Service Unavailable'
+              });
             });
           });
         });
@@ -111,11 +133,16 @@ async function cleanupAudioCache() {
   const entries = [];
   
   for (const key of keys) {
-    const response = await cache.match(key);
-    if (response) {
-      const blob = await response.blob();
-      totalSize += blob.size;
-      entries.push({ key, size: blob.size, timestamp: Date.now() });
+    try {
+      const response = await cache.match(key);
+      if (response) {
+        const cl = response.headers.get('content-length');
+        const size = cl ? (parseInt(cl, 10) || 0) : (await response.blob()).size;
+        totalSize += size;
+        entries.push({ key, size, timestamp: Date.now() });
+      }
+    } catch (e) {
+      entries.push({ key, size: 0, timestamp: Date.now() });
     }
   }
   
@@ -134,6 +161,37 @@ async function cleanupAudioCache() {
     console.log('Audio cache cleaned up. New size:', totalSize);
   }
 }
+
+// Message handler - get cache stats for settings page
+self.addEventListener('message', async (event) => {
+  if (event.data && event.data.type === 'getCacheStats') {
+    const result = { count: 0, size: 0 };
+    try {
+      const cache = await caches.open(AUDIO_CACHE_NAME);
+      const keys = await cache.keys();
+      result.count = keys.length;
+      for (const request of keys) {
+        try {
+          const response = await cache.match(request);
+          if (response) {
+            const cl = response.headers.get('content-length');
+            if (cl) {
+              result.size += parseInt(cl, 10) || 0;
+            } else {
+              const blob = await response.blob();
+              result.size += blob.size;
+            }
+          }
+        } catch (err) {
+          // Opaque response - skip size for this entry
+        }
+      }
+    } catch (e) {
+      console.warn('SW: Could not get cache stats:', e);
+    }
+    event.ports[0].postMessage(result);
+  }
+});
 
 // Activate event - clean up old code caches
 self.addEventListener('activate', (event) => {

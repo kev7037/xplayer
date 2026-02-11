@@ -28,6 +28,11 @@ class MusicPlayer {
         // Use setTimeout to ensure DOM is fully ready and all data is loaded
         setTimeout(() => {
             this.setupNavigation();
+            this.setupSettingsPage();
+            this.setupOfflineIndicator();
+            this.setupKeyboardShortcuts();
+            this.setupMediaSession();
+            this.handlePlayFromUrl();
         }, 100);
     }
 
@@ -39,6 +44,7 @@ class MusicPlayer {
             search: document.getElementById('searchPage'),
             explore: document.getElementById('explorePage'),
             playlists: document.getElementById('playlistsPage'),
+            settings: document.getElementById('settingsPage'),
             player: document.getElementById('playerPage'),
             exploreDetail: document.getElementById('exploreDetailPage')
         };
@@ -103,7 +109,15 @@ class MusicPlayer {
         this.playerBarProgressTrack = document.getElementById('playerBarProgressTrack');
         this.playerBarProgressFill = document.getElementById('playerBarProgressFill');
         this.playerBarProgressHandle = document.getElementById('playerBarProgressHandle');
+        this.playerPageProgressContainer = document.getElementById('playerPageProgressContainer');
+        this.playerPageProgressTrack = document.getElementById('playerPageProgressTrack');
+        this.playerPageProgressFill = document.getElementById('playerPageProgressFill');
+        this.playerPageProgressHandle = document.getElementById('playerPageProgressHandle');
+        this.playerPageLyricsBtn = document.getElementById('playerPageLyricsBtn');
+        this.playerPageAddBtn = document.getElementById('playerPageAddBtn');
+        this.playerPageFavoriteBtn = document.getElementById('playerPageFavoriteBtn');
         this.isDraggingProgress = false;
+        this.draggingProgressTrack = null;
         
         // Controls
         this.playPauseBtn = document.getElementById('playPauseBtn');
@@ -115,8 +129,6 @@ class MusicPlayer {
         // Home Page
         this.recentTracksContainer = document.getElementById('recentTracks');
         this.recentPlaylistsContainer = document.getElementById('recentPlaylists');
-        this.resetAllBtn = document.getElementById('resetAllBtn');
-        
         // Search Page
         this.searchHistoryList = document.getElementById('searchHistoryList');
         this.searchResultsMain = document.getElementById('searchResultsMain');
@@ -133,6 +145,9 @@ class MusicPlayer {
         // UI
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.errorMessage = document.getElementById('errorMessage');
+        this.errorMessageText = document.getElementById('errorMessageText');
+        this.errorRetryBtn = document.getElementById('errorRetryBtn');
+        this.offlineIndicator = document.getElementById('offlineIndicator');
         this.toastContainer = document.getElementById('toastContainer');
     }
 
@@ -279,17 +294,6 @@ class MusicPlayer {
         }
         
         // Reset All Button
-        if (this.resetAllBtn) {
-            this.resetAllBtn.addEventListener('click', () => this.resetAllData());
-        }
-        
-        // Hard Refresh Button (Ctrl+F5 - reload without cache)
-        const hardRefreshBtn = document.getElementById('hardRefreshBtn');
-        if (hardRefreshBtn) {
-            hardRefreshBtn.addEventListener('click', () => {
-                location.reload(true);
-            });
-        }
         
         // Bottom Player Bar
         if (this.playerBarPlayPause) {
@@ -307,11 +311,26 @@ class MusicPlayer {
         if (this.playerBarShuffle) {
             this.playerBarShuffle.addEventListener('click', () => this.toggleShuffle());
         }
+        const shareTrackBtn = document.getElementById('shareTrackBtn');
+        if (shareTrackBtn) {
+            shareTrackBtn.addEventListener('click', () => this.shareCurrentTrack());
+        }
+        const playerBarShareBtn = document.getElementById('playerBarShareBtn');
+        if (playerBarShareBtn) {
+            playerBarShareBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.shareCurrentTrack();
+            });
+        }
         
         // Progress Bar Events
         if (this.playerBarProgressContainer) {
             this.setupProgressBar();
         }
+        if (this.playerPageProgressContainer) {
+            this.setupPlayerPageProgressBar();
+        }
+        this.setupPlayerPageActionButtons();
     }
     
     setupProgressBar() {
@@ -320,7 +339,7 @@ class MusicPlayer {
         // Click to seek
         this.playerBarProgressContainer.addEventListener('click', (e) => {
             if (this.isDraggingProgress) return;
-            this.seekToPosition(e);
+            this.seekToPosition(e, this.playerBarProgressTrack);
         });
         
         // Drag to seek
@@ -329,13 +348,14 @@ class MusicPlayer {
         this.playerBarProgressTrack.addEventListener('mousedown', (e) => {
             isMouseDown = true;
             this.isDraggingProgress = true;
+            this.draggingProgressTrack = this.playerBarProgressTrack;
             this.playerBarProgressContainer.classList.add('dragging');
-            this.seekToPosition(e);
+            this.seekToPosition(e, this.playerBarProgressTrack);
         });
         
         document.addEventListener('mousemove', (e) => {
-            if (isMouseDown && this.isDraggingProgress) {
-                this.seekToPosition(e);
+            if (isMouseDown && this.isDraggingProgress && this.draggingProgressTrack === this.playerBarProgressTrack) {
+                this.seekToPosition(e, this.playerBarProgressTrack);
             }
         });
         
@@ -343,6 +363,7 @@ class MusicPlayer {
             if (isMouseDown) {
                 isMouseDown = false;
                 this.isDraggingProgress = false;
+                this.draggingProgressTrack = null;
                 this.playerBarProgressContainer.classList.remove('dragging');
             }
         });
@@ -351,14 +372,15 @@ class MusicPlayer {
         this.playerBarProgressTrack.addEventListener('touchstart', (e) => {
             isMouseDown = true;
             this.isDraggingProgress = true;
+            this.draggingProgressTrack = this.playerBarProgressTrack;
             this.playerBarProgressContainer.classList.add('dragging');
-            this.seekToPosition(e.touches[0]);
+            this.seekToPosition(e.touches[0], this.playerBarProgressTrack);
         });
         
         document.addEventListener('touchmove', (e) => {
-            if (isMouseDown && this.isDraggingProgress) {
+            if (isMouseDown && this.isDraggingProgress && this.draggingProgressTrack === this.playerBarProgressTrack) {
                 e.preventDefault();
-                this.seekToPosition(e.touches[0]);
+                this.seekToPosition(e.touches[0], this.playerBarProgressTrack);
             }
         });
         
@@ -366,38 +388,281 @@ class MusicPlayer {
             if (isMouseDown) {
                 isMouseDown = false;
                 this.isDraggingProgress = false;
+                this.draggingProgressTrack = null;
                 this.playerBarProgressContainer.classList.remove('dragging');
             }
         });
     }
     
-    seekToPosition(e) {
-        if (!this.playerBarProgressTrack || !this.audioPlayer) return;
+    seekToPosition(e, trackEl = null) {
+        const track = trackEl || this.draggingProgressTrack || this.playerBarProgressTrack;
+        if (!track || !this.audioPlayer) return;
         
-        const rect = this.playerBarProgressTrack.getBoundingClientRect();
+        const rect = track.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const percentage = Math.max(0, Math.min(1, x / rect.width));
         
         if (this.audioPlayer.duration) {
             this.audioPlayer.currentTime = percentage * this.audioPlayer.duration;
-            this.updateProgressBar();
+            const pct = percentage * 100;
+            if (this.playerBarProgressFill && this.playerBarProgressHandle) {
+                this.playerBarProgressFill.style.width = pct + '%';
+                this.playerBarProgressHandle.style.left = pct + '%';
+            }
+            if (this.playerPageProgressFill && this.playerPageProgressHandle) {
+                this.playerPageProgressFill.style.width = pct + '%';
+                this.playerPageProgressHandle.style.left = pct + '%';
+            }
         }
     }
     
     updateProgressBar() {
-        if (!this.audioPlayer || !this.playerBarProgressFill || !this.playerBarProgressHandle) return;
+        if (!this.audioPlayer) return;
         
         // Don't update if user is dragging
         if (this.isDraggingProgress) return;
         
-            if (this.audioPlayer.duration && this.audioPlayer.duration > 0) {
-                const percentage = (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100;
-                this.playerBarProgressFill.style.width = percentage + '%';
-                this.playerBarProgressHandle.style.left = percentage + '%';
-            } else {
-                this.playerBarProgressFill.style.width = '0%';
-                this.playerBarProgressHandle.style.left = '0%';
+        const percentage = (this.audioPlayer.duration && this.audioPlayer.duration > 0)
+            ? (this.audioPlayer.currentTime / this.audioPlayer.duration) * 100
+            : 0;
+        
+        if (this.playerBarProgressFill && this.playerBarProgressHandle) {
+            this.playerBarProgressFill.style.width = percentage + '%';
+            this.playerBarProgressHandle.style.left = percentage + '%';
+        }
+        if (this.playerPageProgressFill && this.playerPageProgressHandle) {
+            this.playerPageProgressFill.style.width = percentage + '%';
+            this.playerPageProgressHandle.style.left = percentage + '%';
+        }
+    }
+
+    setupPlayerPageProgressBar() {
+        if (!this.playerPageProgressContainer || !this.playerPageProgressTrack) return;
+        
+        this.playerPageProgressContainer.addEventListener('click', (e) => {
+            if (this.isDraggingProgress) return;
+            this.seekToPosition(e, this.playerPageProgressTrack);
+        });
+        
+        let isMouseDown = false;
+        this.playerPageProgressTrack.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            this.isDraggingProgress = true;
+            this.draggingProgressTrack = this.playerPageProgressTrack;
+            this.playerPageProgressContainer.classList.add('dragging');
+            this.seekToPosition(e, this.playerPageProgressTrack);
+        });
+        
+        const upHandler = () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                this.isDraggingProgress = false;
+                this.draggingProgressTrack = null;
+                this.playerPageProgressContainer.classList.remove('dragging');
             }
+        };
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isMouseDown && this.isDraggingProgress && this.draggingProgressTrack === this.playerPageProgressTrack) {
+                this.seekToPosition(e, this.playerPageProgressTrack);
+            }
+        });
+        document.addEventListener('mouseup', upHandler);
+        
+        this.playerPageProgressTrack.addEventListener('touchstart', (e) => {
+            isMouseDown = true;
+            this.isDraggingProgress = true;
+            this.draggingProgressTrack = this.playerPageProgressTrack;
+            this.playerPageProgressContainer.classList.add('dragging');
+            this.seekToPosition(e.touches[0], this.playerPageProgressTrack);
+        });
+        document.addEventListener('touchmove', (e) => {
+            if (isMouseDown && this.isDraggingProgress && this.draggingProgressTrack === this.playerPageProgressTrack) {
+                e.preventDefault();
+                this.seekToPosition(e.touches[0], this.playerPageProgressTrack);
+            }
+        });
+        document.addEventListener('touchend', upHandler);
+    }
+
+    setupPlayerPageActionButtons() {
+        if (this.playerPageLyricsBtn) {
+            this.playerPageLyricsBtn.addEventListener('click', () => this.showLyricsForCurrentTrack());
+        }
+        if (this.playerPageAddBtn) {
+            this.playerPageAddBtn.addEventListener('click', () => {
+                const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+                if (track) this.showAddToPlaylistDialog(null, track);
+                else this.showToast('آهنگی برای اضافه کردن نیست', 'info');
+            });
+        }
+        if (this.playerPageFavoriteBtn) {
+            this.playerPageFavoriteBtn.addEventListener('click', () => {
+                const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+                if (track) {
+                    this.toggleFavoriteByTrack(track);
+                    this.updatePlayerPageFavoriteBtn();
+                } else {
+                    this.showToast('آهنگی برای علاقه‌مندی نیست', 'info');
+                }
+            });
+        }
+    }
+
+    updatePlayerPageFavoriteBtn() {
+        if (!this.playerPageFavoriteBtn) return;
+        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        if (track && this.isTrackInFavoritesByUrl(track)) {
+            this.playerPageFavoriteBtn.classList.add('favorite-active');
+        } else {
+            this.playerPageFavoriteBtn.classList.remove('favorite-active');
+        }
+    }
+
+    showLyricsForCurrentTrack() {
+        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        if (!track) {
+            this.showToast('آهنگی برای نمایش متن نیست', 'info');
+            return;
+        }
+        const pageUrl = track.pageUrl || track.url;
+        if (!pageUrl || (!pageUrl.includes('mytehranmusic.com') && !pageUrl.startsWith('http'))) {
+            this.showToast('متن این آهنگ در دسترس نیست', 'info');
+            return;
+        }
+        this.showLyricsModal(track);
+    }
+
+    showLyricsModal(track) {
+        const existing = document.getElementById('lyricsModal');
+        if (existing) existing.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = 'lyricsModal';
+        modal.className = 'lyrics-modal-overlay';
+        modal.innerHTML = `
+            <div class="lyrics-modal">
+                <div class="lyrics-modal-header">
+                    <h3>متن آهنگ</h3>
+                    <button class="btn btn-icon btn-close-lyrics" title="بستن">&times;</button>
+                </div>
+                <div class="lyrics-modal-body">
+                    <div class="lyrics-loading">
+                        <div class="spinner spinner-small"></div>
+                        <p>در حال بارگذاری متن آهنگ...</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.querySelector('.btn-close-lyrics').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        
+        this.fetchAndShowLyrics(track, modal);
+    }
+
+    async fetchAndShowLyrics(track, modal, retryCount = 0) {
+        const maxRetries = 3;
+        const body = modal.querySelector('.lyrics-modal-body');
+        try {
+            const pageUrl = track.pageUrl || track.url;
+            const proxyUrls = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(pageUrl)}`,
+                `https://api.cors.lol/?url=${encodeURIComponent(pageUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(pageUrl)}`
+            ];
+            let html = '';
+            let lastErr = null;
+            for (const proxyUrl of proxyUrls) {
+                try {
+                    const res = await fetch(proxyUrl);
+                    if (res.ok) {
+                        html = await res.text();
+                        break;
+                    }
+                    lastErr = new Error('HTTP ' + res.status);
+                } catch (e) {
+                    lastErr = e;
+                }
+            }
+            if (!html) throw lastErr || new Error('Failed to fetch');
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            let lyricsHtml = this.extractLyricsFromDoc(doc);
+            if (lyricsHtml) {
+                body.innerHTML = lyricsHtml;
+            } else {
+                body.innerHTML = '<div class="lyrics-empty"><p>پیدا نشد</p><button class="btn btn-primary btn-retry-lyrics" style="margin-top:16px;">تلاش مجدد</button></div>';
+                body.querySelector('.btn-retry-lyrics').addEventListener('click', () => {
+                    body.innerHTML = '<div class="lyrics-loading"><div class="spinner spinner-small"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+                    this.fetchAndShowLyrics(track, modal, 0);
+                });
+            }
+        } catch (e) {
+            if (retryCount < maxRetries) {
+                body.innerHTML = `<div class="lyrics-loading"><div class="spinner spinner-small"></div><p>تلاش مجدد... (${retryCount + 1}/${maxRetries})</p></div>`;
+                await new Promise(r => setTimeout(r, 800));
+                return this.fetchAndShowLyrics(track, modal, retryCount + 1);
+            }
+            body.innerHTML = `
+                <div class="lyrics-error">
+                    <p>خطا خورده</p>
+                    <p class="lyrics-error-detail">${this.escapeHtml(e.message)}</p>
+                    <button class="btn btn-primary btn-retry-lyrics" style="margin-top:16px;">تلاش مجدد</button>
+                </div>
+            `;
+            body.querySelector('.btn-retry-lyrics').addEventListener('click', () => {
+                body.innerHTML = '<div class="lyrics-loading"><div class="spinner spinner-small"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+                this.fetchAndShowLyrics(track, modal, 0);
+            });
+        }
+    }
+
+    extractLyricsFromDoc(doc) {
+        const contentp = doc.querySelector('div.contentp');
+        if (!contentp) return null;
+
+        const nodesToHtml = (nodes) => {
+            const div = doc.createElement('div');
+            nodes.forEach(n => div.appendChild(n.cloneNode(true)));
+            return div.innerHTML.trim();
+        };
+
+        // الگوی اول: دقیقاً یک div داخلی + تگ‌های br، متن از بعد از اولین div
+        const directDivs = [...contentp.children].filter(el => el.tagName === 'DIV');
+        const hasBr = contentp.querySelector('br');
+        if (directDivs.length === 1 && hasBr) {
+            const firstDiv = directDivs[0];
+            const afterNodes = [];
+            let found = false;
+            for (const node of contentp.childNodes) {
+                if (node === firstDiv) { found = true; continue; }
+                if (found) afterNodes.push(node);
+            }
+            const html = nodesToHtml(afterNodes);
+            if (html.length > 20) return `<div class="lyrics-text">${html}</div>`;
+        }
+
+        // الگوی دوم: آخرین element غیر br و غیر text، متن از بعد از آن
+        let lastNonBrText = null;
+        for (const node of contentp.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) continue;
+            if (node.nodeName === 'BR') continue;
+            lastNonBrText = node;
+        }
+        if (lastNonBrText) {
+            const afterNodes = [];
+            let found = false;
+            for (const node of contentp.childNodes) {
+                if (node === lastNonBrText) { found = true; continue; }
+                if (found) afterNodes.push(node);
+            }
+            const html = nodesToHtml(afterNodes);
+            if (html.length > 20) return `<div class="lyrics-text">${html}</div>`;
+        }
+
+        return null;
     }
 
     async search() {
@@ -420,7 +685,9 @@ class MusicPlayer {
             this.showLoading(false);
         } catch (error) {
             console.error('Search error:', error);
-            this.showError('خطا در جستجو. لطفا دوباره تلاش کنید.');
+            this.showError('خطا در جستجو. لطفا دوباره تلاش کنید.', {
+                retry: () => this.search()
+            });
             this.showLoading(false);
         }
     }
@@ -1151,15 +1418,16 @@ class MusicPlayer {
     }
 
     loadAndPlay(track) {
-        this.currentTrackEl.textContent = track.title;
-        this.currentArtistEl.textContent = track.artist;
+        this.currentTrackData = track;
+        this.updateTrackDisplay(track.title, track.artist);
+        this.updatePlayerPageFavoriteBtn();
+        document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | MyTehran`;
         
         // Update bottom player bar
-        if (this.playerBarTitle) this.playerBarTitle.textContent = track.title;
-        if (this.playerBarArtist) this.playerBarArtist.textContent = track.artist;
         if (this.playerBarImage) {
             this.playerBarImage.src = track.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E';
         }
+        this.updateMediaSession?.();
         if (this.bottomPlayerBar) {
             this.bottomPlayerBar.style.display = 'flex';
         }
@@ -1266,6 +1534,7 @@ class MusicPlayer {
                 // Success - remove error handler and cache
                 this.audioPlayer.removeEventListener('error', handleAudioError);
                 this.cacheAudio(audioUrl);
+                this.preloadNextTrack();
                 // Show bottom player bar - player section is in playerPage
                 if (this.bottomPlayerBar) {
                     this.bottomPlayerBar.style.display = 'block';
@@ -1291,6 +1560,8 @@ class MusicPlayer {
 
     extractAudioFromPage(track, options = {}) {
         const fromTopMonthly = options.fromTopMonthly;
+        const retryCount = options.retryCount ?? 0;
+        const maxRetries = 3;
         if (!fromTopMonthly) {
             this.showLoading(true);
         }
@@ -1303,44 +1574,146 @@ class MusicPlayer {
             return;
         }
         
-        this.extractAudioUrl(pageUrl).then(url => {
+        const doRetry = () => {
+            if (retryCount < maxRetries - 1) {
+                const delay = 1500 + retryCount * 500;
+                console.log(`Retrying in ${delay}ms (attempt ${retryCount + 2}/${maxRetries})...`);
+                setTimeout(() => {
+                    this.extractAudioFromPage(track, { ...options, retryCount: retryCount + 1 });
+                }, delay);
+            }
+        };
+        
+        this.extractAudioUrl(pageUrl).then(result => {
+            const url = result && typeof result === 'object' ? result.url : result;
+            const metadata = result && typeof result === 'object' ? result : {};
             if (url) {
                 // Check if URL is a directory marker
                 if (url.startsWith('DIRECTORY:')) {
-                    // Don't hide spinner yet - loadDirectoryPlaylist will hide it when tracks are loaded
                     const directoryUrl = url.replace('DIRECTORY:', '');
                     console.log('Detected directory URL, loading playlist:', directoryUrl);
                     this.loadDirectoryPlaylist(directoryUrl, track, { displayInExploreDetail: fromTopMonthly });
                 } else {
-                    if (!fromTopMonthly) this.showLoading(false);
-                    else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
+                    // Update track metadata from page
+                    if (metadata.title != null) track.title = metadata.title;
+                    if (metadata.artist != null) track.artist = metadata.artist;
+                    else track.artist = 'ناشناس';
+                    if (metadata.image != null) track.image = metadata.image;
+                    if (!track.title) {
+                        try {
+                            const path = new URL(pageUrl).pathname.replace(/^\/|\/$/g, '');
+                            if (path) track.title = path.replace(/-/g, ' ');
+                        } catch (_) {}
+                        if (!track.title) track.title = 'آهنگ';
+                    }
+                    this.currentTrackData = track;
+                    this.updateTrackDisplay(track.title, track.artist);
+                    this.updatePlayerPageFavoriteBtn();
+                    document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | MyTehran`;
+                    const imgPlaceholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E';
+                    if (this.playerBarImage) this.playerBarImage.src = track.image || imgPlaceholder;
+                    const currentImageEl = document.getElementById('currentTrackImage');
+                    if (currentImageEl) currentImageEl.src = track.image || imgPlaceholder;
+                    this.updateMediaSession?.();
                     console.log('Extracted audio URL:', url);
-                    this.audioPlayer.crossOrigin = 'anonymous';
-                    this.audioPlayer.src = url;
-                    this.cacheAudio(url);
-                    this.audioPlayer.play().then(() => {
-                        // Add to recent tracks when play succeeds
-                        this.addToRecentTracks(track);
-                    }).catch(err => {
-                        console.error('Play error:', err);
+                    track.url = url;
+                    const proxyUrls = [
+                        `https://api.cors.lol/?url=${encodeURIComponent(url)}`,
+                        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                        `https://cors.io/?${encodeURIComponent(url)}`
+                    ];
+                    const tryPlayFromProxy = async (index = 0) => {
+                        if (index >= proxyUrls.length) {
+                            this.audioPlayer.dispatchEvent(new Event('error'));
+                            return;
+                        }
+                        try {
+                            const res = await fetch(proxyUrls[index], { mode: 'cors' });
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            const blob = await res.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            this.audioPlayer.src = blobUrl;
+                            this.audioPlayer.onloadeddata = () => URL.revokeObjectURL(blobUrl);
+                            this.cacheAudio(url);
+                            await new Promise((resolve, reject) => {
+                                this.audioPlayer.addEventListener('canplay', () => resolve(), { once: true });
+                                this.audioPlayer.addEventListener('error', (e) => reject(e), { once: true });
+                                if (this.audioPlayer.readyState >= 3) resolve();
+                            });
+                            await this.audioPlayer.play();
+                        } catch (e) {
+                            if (e.name === 'NotAllowedError' || (e.message && (e.message.includes('play') || e.message.includes('user gesture')))) {
+                                hideLoading();
+                                return;
+                            }
+                            console.warn('Proxy', index + 1, 'failed:', e.message);
+                            tryPlayFromProxy(index + 1);
+                        }
+                    };
+                    let directFailed = false;
+                    const tryDirectFirst = () => {
+                        this.audioPlayer.crossOrigin = null;
+                        this.audioPlayer.src = url;
+                        const onDirectError = () => {
+                            if (directFailed) return;
+                            directFailed = true;
+                            console.log('Direct load failed, trying proxies...');
+                            this.audioPlayer.crossOrigin = 'anonymous';
+                            tryPlayFromProxy(0).catch(() => {});
+                        };
+                        this.audioPlayer.addEventListener('error', onDirectError, { once: true });
+                        this.audioPlayer.play().then(() => {
+                            if (!directFailed) this.cacheAudio(url);
+                        }).catch((e) => {
+                            if (e.name === 'NotAllowedError' || (e.message && (e.message.includes('play') || e.message.includes('user gesture')))) {
+                                hideLoading();
+                                return;
+                            }
+                            onDirectError();
+                        });
+                    };
+                    let loadingHidden = false;
+                    const hideLoading = () => {
+                        if (loadingHidden) return;
+                        loadingHidden = true;
+                        if (!fromTopMonthly) this.showLoading(false);
+                        else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
+                    };
+                    this.audioPlayer.addEventListener('playing', hideLoading, { once: true });
+                    this.audioPlayer.addEventListener('error', () => {
+                        hideLoading();
                         this.showError('خطا در پخش موزیک. لطفا موزیک دیگری انتخاب کنید.');
-                    });
-                    // Show bottom player bar - player section is in playerPage
+                    }, { once: true });
+                    setTimeout(hideLoading, 15000);
+                    this.addToRecentTracks(track);
+                    tryDirectFirst();
                     if (this.bottomPlayerBar) {
                         this.bottomPlayerBar.style.display = 'block';
                     }
                     this.updatePlayButton();
                 }
             } else {
-                if (!fromTopMonthly) this.showLoading(false);
-                else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
-                this.showError('نمی‌توان موزیک را پخش کرد. لطفا موزیک دیگری انتخاب کنید.');
+                if (retryCount < maxRetries - 1) {
+                    doRetry();
+                } else {
+                    if (!fromTopMonthly) this.showLoading(false);
+                    else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
+                    this.showError('نمی‌توان موزیک را پخش کرد. لطفا موزیک دیگری انتخاب کنید.');
+                }
             }
         }).catch(err => {
-            if (!fromTopMonthly) this.showLoading(false);
-            else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
             console.error('Error extracting audio:', err);
-            this.showError('خطا در بارگذاری موزیک. لطفا دوباره تلاش کنید.');
+            if (retryCount < maxRetries - 1) {
+                doRetry();
+            } else {
+                if (!fromTopMonthly) this.showLoading(false);
+                else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
+                this.showError('خطا در بارگذاری موزیک. لطفا دوباره تلاش کنید.', {
+                    retry: () => this.extractAudioFromPage(track, { ...options, retryCount: 0 })
+                });
+            }
         });
     }
 
@@ -1352,15 +1725,29 @@ class MusicPlayer {
                 (async () => {
                     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(pageUrl)}`;
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
                     try {
                         const response = await fetch(proxyUrl, { signal: controller.signal });
                         clearTimeout(timeoutId);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         if (response.headers.get('content-type')?.includes('application/json')) {
                             const data = await response.json();
-                            return data.contents;
+                            return data.contents || '';
                         }
+                        return await response.text();
+                    } catch (e) {
+                        clearTimeout(timeoutId);
+                        throw e;
+                    }
+                })(),
+                (async () => {
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(pageUrl)}`;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    try {
+                        const response = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         return await response.text();
                     } catch (e) {
                         clearTimeout(timeoutId);
@@ -1370,7 +1757,7 @@ class MusicPlayer {
                 (async () => {
                     const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(pageUrl)}`;
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
                     try {
                         const response = await fetch(proxyUrl, { signal: controller.signal });
                         clearTimeout(timeoutId);
@@ -1402,6 +1789,10 @@ class MusicPlayer {
             
             console.log(`extractAudioUrl: Parsed HTML for ${pageUrl}, document title: ${doc.title || 'N/A'}`);
             
+            const metadata = this.extractMetadataFromDoc(doc, pageUrl);
+            
+            const returnResult = (url) => url ? { url, ...metadata } : { url: null, ...metadata };
+            
             // Method 1: Check for data-music attribute (most reliable for this site)
             const playButton = doc.querySelector('div.mcpplay[data-music]');
             if (playButton) {
@@ -1410,7 +1801,7 @@ class MusicPlayer {
                     const finalUrl = musicUrl.startsWith('http') ? musicUrl : `https://mytehranmusic.com${musicUrl}`;
                     if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
                         console.log(`Method 1 found data-music: ${finalUrl}`);
-                        return finalUrl;
+                        return returnResult(finalUrl);
                     }
                 }
             }
@@ -1424,7 +1815,7 @@ class MusicPlayer {
                     const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
                     if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
                         console.log(`Method 2 found audio source: ${finalUrl}`);
-                        return finalUrl;
+                        return returnResult(finalUrl);
                     }
                 }
             }
@@ -1438,7 +1829,7 @@ class MusicPlayer {
                     const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
                     if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
                         console.log(`Method 3 found audio element: ${finalUrl}`);
-                        return finalUrl;
+                        return returnResult(finalUrl);
                     }
                 }
             }
@@ -1454,7 +1845,7 @@ class MusicPlayer {
                     const finalUrl = src.startsWith('http') ? src : `https://mytehranmusic.com${src}`;
                     if (finalUrl !== 'https://mytehranmusic.com/' && finalUrl !== 'https://mytehranmusic.com') {
                         console.log(`Method 4 found data attribute: ${finalUrl}`);
-                        return finalUrl;
+                        return returnResult(finalUrl);
                     }
                 }
             }
@@ -1549,16 +1940,14 @@ class MusicPlayer {
                     // Store directory URL with a special marker to indicate it's a directory
                     // Priority: 320 first, then 128
                     if (linkText.includes('320')) {
-                        // Return special marker for directory - we'll handle it in extractAudioFromPage
                         console.log(`Returning directory URL (320): ${baseDir}`);
-                        return `DIRECTORY:${baseDir}`;
+                        return returnResult(`DIRECTORY:${baseDir}`);
                     } else if (linkText.includes('128')) {
                         console.log(`Returning directory URL (128): ${baseDir}`);
-                        return `DIRECTORY:${baseDir}`;
+                        return returnResult(`DIRECTORY:${baseDir}`);
                     } else {
-                        // No quality specified - prefer 320
                         console.log(`Returning directory URL (no quality specified): ${baseDir}`);
-                        return `DIRECTORY:${baseDir}`;
+                        return returnResult(`DIRECTORY:${baseDir}`);
                     }
                 }
             }
@@ -1575,7 +1964,7 @@ class MusicPlayer {
                         url !== 'https://mytehranmusic.com' &&
                         (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
                         console.log(`Returning 320 URL: ${url}`);
-                        return url;
+                        return returnResult(url);
                     }
                 }
             }
@@ -1588,7 +1977,7 @@ class MusicPlayer {
                         url !== 'https://mytehranmusic.com' &&
                         (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
                         console.log(`Returning 128 URL: ${url}`);
-                        return url;
+                        return returnResult(url);
                     }
                 }
             }
@@ -1602,7 +1991,7 @@ class MusicPlayer {
                         url !== 'https://mytehranmusic.com' &&
                         (url.includes('.mp3') || url.includes('.m4a') || url.includes('.ogg'))) {
                         console.log(`Returning other quality URL: ${url}`);
-                        return url;
+                        return returnResult(url);
                     }
                 }
             }
@@ -1617,22 +2006,109 @@ class MusicPlayer {
                 const audioUrlMatch = content.match(/https?:\/\/[^\s"']+\.(mp3|m4a|ogg)(?:\?[^\s"']*)?/i);
                 if (audioUrlMatch && audioUrlMatch[0] && !audioUrlMatch[0].endsWith('/')) {
                     console.log(`Method 6 found audio URL in script: ${audioUrlMatch[0]}`);
-                    return audioUrlMatch[0];
+                    return returnResult(audioUrlMatch[0]);
                 }
-                // Also look for dl.mytehranmusic.com URLs that end with .mp3
                 const dlMatch = content.match(/https?:\/\/dl\.mytehranmusic\.com[^\s"']+\.(mp3|m4a|ogg)(?:\?[^\s"']*)?/i);
                 if (dlMatch && dlMatch[0] && !dlMatch[0].endsWith('/')) {
                     console.log(`Method 6 found dl.mytehranmusic.com URL in script: ${dlMatch[0]}`);
-                    return dlMatch[0];
+                    return returnResult(dlMatch[0]);
                 }
             }
             
             console.warn(`extractAudioUrl: No audio URL found for ${pageUrl}, returning null`);
-            return null;
+            return returnResult(null);
         } catch (error) {
             console.error('Error extracting audio URL:', error);
-            return null;
+            return { url: null, title: null, artist: null, image: null };
         }
+    }
+
+    extractMetadataFromDoc(doc, pageUrl = '') {
+        let title = null, artist = null, image = null;
+        // اول mcpplay با data-music (مثل Method 1) - برای صفحه تک‌آهنگ
+        let playButton = doc.querySelector('div.mcpplay[data-music]');
+        if (!playButton) playButton = doc.querySelector('div.mcpplay');
+        if (playButton) {
+            title = playButton.getAttribute('data-track') || '';
+            artist = playButton.getAttribute('data-artist') || '';
+            image = playButton.getAttribute('data-image') || '';
+        }
+        // Fallback: og:title و doc.title - اول کل رو parse کنیم
+        const ogTitleEl = doc.querySelector('meta[property="og:title"]');
+        const rawOg = ogTitleEl ? ogTitleEl.getAttribute('content') || '' : '';
+        const parts = rawOg.split(/\s*[|\-–—]\s*/).map(s => s.trim()).filter(Boolean);
+        const cleanParts = parts.filter(p => !/mytehran|tehranmusic|تهران\s*موزیک/i.test(p));
+        if (!title && cleanParts.length >= 1) title = cleanParts[0];
+        if (!title && doc.title) title = doc.title.replace(/\s*[-|]\s*MyTehran.*$/i, '').trim();
+        if (!artist && cleanParts.length >= 2) artist = cleanParts.find(p => p !== title) || cleanParts[1];
+        if (!image) {
+            const ogImage = doc.querySelector('meta[property="og:image"]');
+            if (ogImage) image = ogImage.getAttribute('content') || '';
+        }
+        if (!artist) {
+            const artistEl = doc.querySelector('.artist a, div.artist a, [class*="artist"] a');
+            if (artistEl) artist = artistEl.textContent.trim();
+            if (!artist) {
+                const artistEl2 = doc.querySelector('.artist, div.artist, [class*="artist"], .singer, [class*="singer"]');
+                if (artistEl2) artist = artistEl2.textContent.trim();
+            }
+        }
+        // Fallback: از div.title یا h1 یا h2 (صفحه تک‌آهنگ اغلب h2 دارد)
+        if (!title) {
+            const titleEl = doc.querySelector('div.title a, h1, h2, .entry-title, .post-title');
+            if (titleEl) {
+                let txt = titleEl.textContent.trim();
+                if (txt) title = txt;
+            }
+        }
+        if (!title && !artist && pageUrl) {
+            try {
+                const path = new URL(pageUrl).pathname.replace(/^\/|\/$/g, '');
+                if (path) title = path.replace(/-/g, ' ');
+            } catch (_) {}
+        }
+        // Fallback: استخراج از نام فایل لینک دانلود (مثل Erfan Tahmasbi - Emshab.mp3)
+        if ((!title || !artist) && doc.querySelector) {
+            const mp3Link = doc.querySelector('a[href*=".mp3"], a[href*=".m4a"]');
+            if (mp3Link) {
+                const href = mp3Link.getAttribute('href') || mp3Link.href || '';
+                try {
+                    const pathname = href.includes('?') ? href.split('?')[0] : href;
+                    const filename = pathname.split('/').pop() || '';
+                    let decoded = decodeURIComponent(filename).replace(/\.(mp3|m4a|ogg)(\s|$)/i, '').trim();
+                    decoded = decoded.replace(/\s*\(\d+\)\s*$/, '').trim();
+                    const dashParts = decoded.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean);
+                    if (dashParts.length >= 2) {
+                        if (!artist) artist = dashParts[0];
+                        if (!title) title = dashParts[1];
+                    } else if (dashParts.length === 1 && !title) {
+                        title = dashParts[0];
+                    }
+                } catch (_) {}
+            }
+        }
+        if (image && !image.startsWith('http') && !image.startsWith('data:')) {
+            image = image.startsWith('//') ? 'https:' + image : (image.startsWith('/') ? 'https://mytehranmusic.com' + image : 'https://mytehranmusic.com/' + image);
+        }
+        if (title) {
+            title = title
+                .replace(/^دانلود\s*آهنگ\s*(جدید\s*)?/i, '')
+                .replace(/^دانلود\s*پادکست\s*/i, '')
+                .replace(/\s*\+\s*متن\s*آهنگ.*$/i, '')
+                .replace(/\s*[\(\[]?\s*کیفیت\s*\d+.*$/i, '')
+                .replace(/\s*با\s*کیفیت\s*[۰-۹0-9]+\s*$/gi, '')
+                .replace(/\s*با\s*کیفیت\s*[۰-۹0-9]+/gi, '')
+                .replace(/\s*quality\s*[۰-۹0-9]+/gi, '')
+                .replace(/\s*کوالیتی\s*[۰-۹0-9]+/gi, '')
+                .trim();
+            // اگر عنوان به صورت "هنرمند (گروه) نام آهنگ" باشد، جدا کنیم
+            const artistTitleMatch = title.match(/^(.+?)\)\s+(.+)$/);
+            if (artistTitleMatch) {
+                artist = (artistTitleMatch[1] + ')').trim();
+                title = artistTitleMatch[2].trim();
+            }
+        }
+        return { title: title || null, artist: artist || null, image: image || null };
     }
 
     togglePlayPause() {
@@ -2080,7 +2556,79 @@ class MusicPlayer {
             if (!displayInExploreDetail) this.showLoading(false);
             else if (this.exploreDetailLoadingIndicator) this.exploreDetailLoadingIndicator.style.display = 'none';
             console.error('Error loading directory playlist:', error);
-            this.showError('خطا در بارگذاری پلی‌لیست. لطفا دوباره تلاش کنید.');
+            this.showError('خطا در بارگذاری پلی‌لیست. لطفا دوباره تلاش کنید.', {
+                retry: () => this.loadDirectoryPlaylist(directoryUrl, originalTrack, options)
+            });
+        }
+    }
+
+    handlePlayFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const playUrl = params.get('play');
+        if (!playUrl) return;
+        try {
+            const url = decodeURIComponent(playUrl);
+            const track = {
+                id: Date.now(),
+                title: 'آهنگ',
+                artist: 'در حال بارگذاری...',
+                url: url,
+                pageUrl: url
+            };
+            this.playlist = [track];
+            this.currentIndex = 0;
+            this.loadAndPlay(track);
+            this.navigateToPage('player');
+            history.replaceState({}, '', window.location.pathname);
+        } catch (e) {
+            console.warn('Could not play from URL:', e);
+        }
+    }
+
+    async shareCurrentTrack() {
+        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        if (!track) {
+            this.showToast('آهنگی برای اشتراک‌گذاری نیست', 'info');
+            return;
+        }
+        const trackSourceUrl = track.pageUrl || track.url;
+        const appUrl = new URL('index.html', window.location.href).href;
+        const shareUrl = trackSourceUrl ? `${appUrl}${appUrl.includes('?') ? '&' : '?'}play=${encodeURIComponent(trackSourceUrl)}` : appUrl;
+        const shareText = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'}`;
+        const shareData = {
+            title: track.title || 'آهنگ',
+            text: shareText,
+            url: shareUrl
+        };
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+                this.showToast('اشتراک‌گذاری انجام شد', 'success');
+            } else {
+                const fullText = `${shareText}\n${shareUrl}`;
+                await navigator.clipboard.writeText(fullText);
+                this.showToast('لینک کپی شد', 'success');
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            try {
+                await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+                this.showToast('لینک کپی شد', 'success');
+            } catch (e) {
+                this.showError('اشتراک‌گذاری انجام نشد');
+            }
+        }
+    }
+
+    preloadNextTrack() {
+        const nextIdx = this.isShuffle ? 
+            (this.shuffledIndices[this.shuffledIndices.indexOf(this.currentIndex) + 1]) :
+            this.currentIndex + 1;
+        const nextTrack = nextIdx >= 0 && nextIdx < this.playlist.length ? this.playlist[nextIdx] : null;
+        if (!nextTrack?.url) return;
+        const url = nextTrack.url;
+        if (url.endsWith('.mp3') || url.endsWith('.m4a') || url.includes('dl.mytehranmusic.com')) {
+            fetch(url).catch(() => {});
         }
     }
 
@@ -2404,6 +2952,8 @@ class MusicPlayer {
             return;
         }
         
+        const playlistId = this.currentPlaylistId;
+        
         console.log('Displaying playlist tracks:', tracks.length, tracks);
         
         tracks.forEach((track, index) => {
@@ -2428,11 +2978,126 @@ class MusicPlayer {
             console.log('Creating track element:', track.title, track.artist, track);
             const trackElement = this.createTrackElement(track, 'playlist-detail', index);
             if (trackElement) {
+                trackElement.draggable = true;
+                trackElement.dataset.trackIndex = String(index);
+                trackElement.dataset.playlistId = playlistId || '';
+                trackElement.classList.add('draggable-track');
                 this.playlistTracksContainer.appendChild(trackElement);
             } else {
                 console.error('Failed to create track element for:', track);
             }
         });
+        if (playlistId) {
+            this.setupPlaylistDragDrop(playlistId);
+            this.setupPlaylistImportExport(playlistId);
+        }
+    }
+
+    setupPlaylistDragDrop(playlistId) {
+        if (!this.playlistTracksContainer) return;
+        const container = this.playlistTracksContainer;
+        let draggedIndex = null;
+        container.querySelectorAll('.draggable-track').forEach(el => {
+            el.ondragstart = (e) => {
+                draggedIndex = parseInt(el.dataset.trackIndex, 10);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', draggedIndex);
+                el.classList.add('dragging');
+            };
+            el.ondragend = () => el.classList.remove('dragging');
+            el.ondragover = (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const idx = parseInt(el.dataset.trackIndex, 10);
+                if (draggedIndex !== null && draggedIndex !== idx) {
+                    el.classList.add('drag-over');
+                }
+            };
+            el.ondragleave = () => el.classList.remove('drag-over');
+            el.ondrop = (e) => {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+                const dropIndex = parseInt(el.dataset.trackIndex, 10);
+                if (draggedIndex === null || draggedIndex === dropIndex) return;
+                const playlist = this.customPlaylists[playlistId];
+                if (!playlist) return;
+                const tracks = playlist.tracks;
+                const [moved] = tracks.splice(draggedIndex, 1);
+                tracks.splice(dropIndex, 0, moved);
+                this.saveCustomPlaylists();
+                this.displayPlaylistTracks(playlist.tracks);
+                if (this.currentPlaylistId === playlistId) {
+                    this.playlist = [...playlist.tracks];
+                    this.currentIndex = this.currentIndex === draggedIndex ? dropIndex : 
+                        this.currentIndex === dropIndex ? draggedIndex : 
+                        this.currentIndex < Math.min(draggedIndex, dropIndex) || this.currentIndex > Math.max(draggedIndex, dropIndex) ? this.currentIndex :
+                        this.currentIndex + (draggedIndex < dropIndex ? -1 : 1);
+                    this.updatePlaylistDisplay();
+                }
+            };
+        });
+    }
+
+    setupPlaylistImportExport(playlistId) {
+        const exportBtn = document.getElementById('playlistExportBtn');
+        const importLabel = document.getElementById('playlistImportLabel');
+        const importInput = document.getElementById('playlistImportInput');
+        const playlist = this.customPlaylists[playlistId];
+        if (!playlist) {
+            if (exportBtn) exportBtn.style.display = 'none';
+            if (importLabel) importLabel.style.display = 'none';
+            return;
+        }
+        if (exportBtn) {
+            exportBtn.style.display = '';
+            exportBtn.onclick = () => {
+                const playlist = this.customPlaylists[playlistId];
+                if (!playlist) return;
+                const data = JSON.stringify({ name: playlist.name, tracks: playlist.tracks }, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${playlist.name.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '_')}.json`;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 100);
+                this.showToast('پلی‌لیست صادر شد', 'success');
+            };
+        }
+        if (importLabel) importLabel.style.display = '';
+        if (importInput) {
+            importInput.onchange = (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const data = JSON.parse(reader.result);
+                        const tracks = data.tracks || [];
+                        if (tracks.length === 0) {
+                            this.showError('فایل نامعتبر است');
+                            return;
+                        }
+                        const playlist = this.customPlaylists[playlistId];
+                        if (playlist) {
+                            playlist.tracks.push(...tracks);
+                            this.saveCustomPlaylists();
+                            this.displayPlaylistTracks(playlist.tracks);
+                            this.showToast(`${tracks.length} آهنگ وارد شد`, 'success');
+                        }
+                    } catch (err) {
+                        this.showError('خطا در خواندن فایل');
+                    }
+                    importInput.value = '';
+                };
+                reader.readAsText(file);
+            };
+        }
     }
 
     async downloadPlaylist(playlistId) {
@@ -2465,9 +3130,9 @@ class MusicPlayer {
                         failCount++;
                     }
                 } else {
-                    // Try to extract and cache
                     try {
-                        const url = await this.extractAudioUrl(audioUrl);
+                        const result = await this.extractAudioUrl(audioUrl);
+                        const url = result && typeof result === 'object' ? result.url : result;
                         if (url) {
                             await this.cacheAudio(url);
                             successCount++;
@@ -2713,13 +3378,45 @@ class MusicPlayer {
         }
     }
 
-    showError(message) {
-        if (this.errorMessage) {
-            this.errorMessage.textContent = message;
-            this.errorMessage.style.display = 'block';
-            setTimeout(() => {
+    applyMarqueeIfNeeded(el, threshold = 22) {
+        if (!el) return;
+        const wrapper = el.parentElement;
+        if (!wrapper) return;
+        const len = (el.textContent || '').trim().length;
+        wrapper.classList.toggle('marquee', len > threshold);
+    }
+
+    updateTrackDisplay(title, artist) {
+        const t = title || 'آهنگ';
+        const a = artist || 'ناشناس';
+        if (this.currentTrackEl) {
+            this.currentTrackEl.textContent = t;
+            this.applyMarqueeIfNeeded(this.currentTrackEl, 22);
+        }
+        if (this.currentArtistEl) {
+            this.currentArtistEl.textContent = a;
+        }
+        if (this.playerBarTitle) {
+            this.playerBarTitle.textContent = t;
+        }
+        if (this.playerBarArtist) {
+            this.playerBarArtist.textContent = a;
+        }
+    }
+
+    showError(message, options = {}) {
+        if (!this.errorMessage) return;
+        (this.errorMessageText || this.errorMessage).textContent = message;
+        if (this.errorRetryBtn) {
+            this.errorRetryBtn.style.display = options.retry ? 'inline-block' : 'none';
+            this.errorRetryBtn.onclick = () => {
                 this.hideError();
-            }, 5000);
+                if (options.retry) options.retry();
+            };
+        }
+        this.errorMessage.style.display = 'flex';
+        if (!options.retry) {
+            setTimeout(() => this.hideError(), 5000);
         }
     }
 
@@ -2781,7 +3478,7 @@ class MusicPlayer {
         try {
             const saved = localStorage.getItem('mytehranCurrentPage');
             console.log('Saved page from localStorage:', saved);
-            if (saved && (saved === 'home' || saved === 'search' || saved === 'playlists')) {
+            if (saved && (saved === 'home' || saved === 'search' || saved === 'playlists' || saved === 'settings' || saved === 'explore')) {
                 savedPage = saved;
                 console.log('Restoring saved page:', savedPage);
             } else {
@@ -2871,7 +3568,162 @@ class MusicPlayer {
             this.displaySearchHistory();
         } else if (page === 'explore') {
             this.loadExploreData();
+        } else if (page === 'settings') {
+            this.updateSettingsPage();
+        } else if (page === 'player') {
+            this.updatePlayerPageFavoriteBtn();
         }
+    }
+
+    async getCacheStats() {
+        const result = { count: 0, size: 0, totalUsage: 0 };
+        if (!('caches' in window)) return result;
+
+        // Try to get audio cache stats from Service Worker first (more reliable)
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            try {
+                const swResult = await new Promise((resolve) => {
+                    const mc = new MessageChannel();
+                    let done = false;
+                    const t = setTimeout(() => {
+                        if (!done) { done = true; resolve(null); }
+                    }, 3000);
+                    mc.port1.onmessage = (e) => {
+                        if (!done) { done = true; clearTimeout(t); resolve(e.data); }
+                    };
+                    navigator.serviceWorker.controller.postMessage({ type: 'getCacheStats' }, [mc.port2]);
+                });
+                if (swResult) {
+                    result.count = swResult.count || 0;
+                    result.size = swResult.size || 0;
+                }
+            } catch (e) {
+                console.debug('SW cache stats failed, using direct:', e);
+            }
+        }
+        if (result.count === 0 && result.size === 0) {
+            try {
+                const cache = await caches.open('mytehran-audio-v1');
+                const keys = await cache.keys();
+                result.count = keys.length;
+                for (const request of keys) {
+                    try {
+                        const response = await cache.match(request);
+                        if (response) {
+                            const cl = response.headers.get('content-length');
+                            if (cl) {
+                                result.size += parseInt(cl, 10) || 0;
+                            } else {
+                                const blob = await response.blob();
+                                result.size += blob.size;
+                            }
+                        }
+                    } catch (err) {
+                        // Opaque response - skip
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not get cache stats:', e);
+            }
+        }
+        if (navigator.storage && navigator.storage.estimate) {
+            try {
+                const estimate = await navigator.storage.estimate();
+                result.totalUsage = estimate.usage || 0;
+            } catch (e) {
+                console.warn('Could not get storage estimate:', e);
+            }
+        }
+        return result;
+    }
+
+    formatBytes(bytes) {
+        if (bytes === 0) return '۰ بایت';
+        const k = 1024;
+        const sizes = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        const value = (bytes / Math.pow(k, i)).toFixed(2);
+        const persianDigits = value.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+        return `${persianDigits} ${sizes[i]}`;
+    }
+
+    async updateSettingsPage() {
+        const countEl = document.getElementById('settingsCachedCount');
+        const sizeEl = document.getElementById('settingsCacheSize');
+        const totalEl = document.getElementById('settingsTotalStorage');
+        const hintEl = document.getElementById('settingsCacheHint');
+        if (countEl) countEl.textContent = '...';
+        if (sizeEl) sizeEl.textContent = '...';
+        if (totalEl) totalEl.textContent = '...';
+        if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
+        const stats = await this.getCacheStats();
+        if (countEl) countEl.textContent = stats.count.toString();
+        if (sizeEl) sizeEl.textContent = this.formatBytes(stats.size);
+        if (totalEl) totalEl.textContent = stats.totalUsage > 0 ? this.formatBytes(stats.totalUsage) : '-';
+        if (hintEl && stats.count === 0) {
+            if (!window.isSecureContext || location.protocol === 'file:') {
+                hintEl.textContent = 'برای کش شدن، اپ باید از localhost یا HTTPS اجرا شود (نه file://).';
+                hintEl.style.display = 'block';
+            } else if (!navigator.serviceWorker?.controller) {
+                hintEl.textContent = 'Service Worker هنوز فعال نیست. صفحه را refresh کنید و دوباره آهنگ پخش کنید.';
+                hintEl.style.display = 'block';
+            }
+        }
+    }
+
+    setupSettingsPage() {
+        const refreshBtn = document.getElementById('settingsRefreshStatsBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.updateSettingsPage());
+        }
+        const hardRefreshBtn = document.getElementById('settingsHardRefreshBtn');
+        if (hardRefreshBtn) {
+            hardRefreshBtn.addEventListener('click', () => location.reload(true));
+        }
+        const resetBtn = document.getElementById('settingsResetAllBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetAllData());
+        }
+    }
+
+    setupOfflineIndicator() {
+        if (!this.offlineIndicator) return;
+        const update = () => {
+            this.offlineIndicator.style.display = navigator.onLine ? 'none' : 'block';
+        };
+        window.addEventListener('online', update);
+        window.addEventListener('offline', update);
+        update();
+    }
+
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            switch (e.key) {
+                case ' ': e.preventDefault(); this.togglePlayPause(); break;
+                case 'ArrowRight': e.preventDefault(); this.playNext(); break;
+                case 'ArrowLeft': e.preventDefault(); this.playPrevious(); break;
+            }
+        });
+    }
+
+    setupMediaSession() {
+        if (!('mediaSession' in navigator)) return;
+        this.updateMediaSession = () => {
+            const track = this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null;
+            if (track) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: track.title || '-',
+                    artist: track.artist || '-',
+                    artwork: track.image ? [{ src: track.image, sizes: '96x96', type: 'image/jpeg' }] : []
+                });
+            }
+        };
+        navigator.mediaSession.setActionHandler('play', () => this.audioPlayer.play());
+        navigator.mediaSession.setActionHandler('pause', () => this.audioPlayer.pause());
+        navigator.mediaSession.setActionHandler('previoustrack', () => this.playPrevious());
+        navigator.mediaSession.setActionHandler('nexttrack', () => this.playNext());
+        this.audioPlayer.addEventListener('play', () => this.updateMediaSession?.());
     }
 
     // Load explore page data (latest, top monthly, podcasts)
@@ -3551,7 +4403,9 @@ class MusicPlayer {
             }
         }).catch(error => {
             console.error('Search error:', error);
-            this.showError('خطا در جستجو. لطفا دوباره تلاش کنید.');
+            this.showError('خطا در جستجو. لطفا دوباره تلاش کنید.', {
+                retry: () => this.searchMain()
+            });
             if (this.searchLoadingIndicator) {
                 this.searchLoadingIndicator.style.display = 'none';
             }
@@ -3871,9 +4725,19 @@ class MusicPlayer {
         }));
     }
 
+    isSameTrackByUrl(trackA, trackB) {
+        if (!trackA || !trackB) return false;
+        const urlA = this.normalizeUrl(trackA.url);
+        const pageUrlA = trackA.pageUrl ? this.normalizeUrl(trackA.pageUrl) : null;
+        const urlB = this.normalizeUrl(trackB.url);
+        const pageUrlB = trackB.pageUrl ? this.normalizeUrl(trackB.pageUrl) : null;
+        return urlA === urlB || (pageUrlA && pageUrlB === pageUrlA) || (pageUrlB && pageUrlA === pageUrlB) ||
+               (pageUrlA && urlB === pageUrlA) || (pageUrlB && urlA === pageUrlB);
+    }
+
     addToRecentTracks(track) {
-        // Remove if already exists
-        this.recentTracks = this.recentTracks.filter(t => t.id !== track.id);
+        // Remove if already exists (by id or by URL)
+        this.recentTracks = this.recentTracks.filter(t => t.id !== track.id && !this.isSameTrackByUrl(t, track));
         // Add to beginning
         this.recentTracks.unshift({...track});
         // Keep only last 50
