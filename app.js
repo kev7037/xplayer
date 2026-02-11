@@ -17,6 +17,7 @@ class MusicPlayer {
         this.nextPlaylistId = 1;
         this.FAVORITE_PLAYLIST_ID = 'favorite'; // Special ID for favorite playlist
         this.previousPage = null; // Store previous page for player page navigation
+        this.lyricsCache = this.loadLyricsCache();
         
         this.initializeElements();
         this.attachEventListeners();
@@ -513,18 +514,58 @@ class MusicPlayer {
         }
     }
 
+    getLyricsPageUrl(track) {
+        if (!track) return null;
+        const u = track.pageUrl || track.url;
+        if (!u || (!u.includes('mytehranmusic.com') && !u.startsWith('http'))) return null;
+        if (/\.(mp3|m4a|ogg|wav)(\?|#|$)/i.test(u)) return null;
+        return u;
+    }
+
+    closeLyricsModal() {
+        const modal = document.getElementById('lyricsModal');
+        if (modal) modal.remove();
+    }
+
     showLyricsForCurrentTrack() {
         const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
         if (!track) {
             this.showToast('آهنگی برای نمایش متن نیست', 'info');
             return;
         }
-        const pageUrl = track.pageUrl || track.url;
-        if (!pageUrl || (!pageUrl.includes('mytehranmusic.com') && !pageUrl.startsWith('http'))) {
+        const pageUrl = this.getLyricsPageUrl(track);
+        if (!pageUrl) {
             this.showToast('متن این آهنگ در دسترس نیست', 'info');
             return;
         }
         this.showLyricsModal(track);
+    }
+
+    loadLyricsCache() {
+        try {
+            const saved = localStorage.getItem('mytehranLyricsCache');
+            if (saved) {
+                const data = JSON.parse(saved);
+                return data && typeof data === 'object' ? data : {};
+            }
+        } catch (e) {
+            console.warn('Could not load lyrics cache:', e);
+        }
+        return {};
+    }
+
+    saveLyricsCache() {
+        try {
+            const MAX_ENTRIES = 100;
+            const keys = Object.keys(this.lyricsCache);
+            if (keys.length > MAX_ENTRIES) {
+                const toRemove = keys.slice(0, keys.length - MAX_ENTRIES);
+                toRemove.forEach(k => delete this.lyricsCache[k]);
+            }
+            localStorage.setItem('mytehranLyricsCache', JSON.stringify(this.lyricsCache));
+        } catch (e) {
+            console.warn('Could not save lyrics cache:', e);
+        }
     }
 
     showLyricsModal(track) {
@@ -553,14 +594,40 @@ class MusicPlayer {
         modal.querySelector('.btn-close-lyrics').addEventListener('click', () => modal.remove());
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         
+        const pageUrl = this.getLyricsPageUrl(track);
+        if (!pageUrl) {
+            const body = modal.querySelector('.lyrics-modal-body');
+            body.innerHTML = '<div class="lyrics-empty"><p>متن این آهنگ در دسترس نیست</p></div>';
+            return;
+        }
+        const cacheKey = this.normalizeUrl(pageUrl);
+        const cached = this.lyricsCache[cacheKey];
+        if (cached) {
+            const body = modal.querySelector('.lyrics-modal-body');
+            body.innerHTML = cached;
+            if (cached.includes('btn-retry-lyrics')) {
+                body.querySelector('.btn-retry-lyrics')?.addEventListener('click', () => {
+                    delete this.lyricsCache[cacheKey];
+                    this.saveLyricsCache();
+                    body.innerHTML = '<div class="lyrics-loading"><div class="spinner spinner-small"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
+                    this.fetchAndShowLyrics(track, modal, 0);
+                });
+            }
+            return;
+        }
+        
         this.fetchAndShowLyrics(track, modal);
     }
 
     async fetchAndShowLyrics(track, modal, retryCount = 0) {
         const maxRetries = 3;
         const body = modal.querySelector('.lyrics-modal-body');
+        const pageUrl = this.getLyricsPageUrl(track);
+        if (!pageUrl) {
+            body.innerHTML = '<div class="lyrics-empty"><p>متن این آهنگ در دسترس نیست</p></div>';
+            return;
+        }
         try {
-            const pageUrl = track.pageUrl || track.url;
             const proxyUrls = [
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(pageUrl)}`,
                 `https://api.cors.lol/?url=${encodeURIComponent(pageUrl)}`,
@@ -584,11 +651,19 @@ class MusicPlayer {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             let lyricsHtml = this.extractLyricsFromDoc(doc);
+            const cacheKey = this.normalizeUrl(pageUrl);
             if (lyricsHtml) {
                 body.innerHTML = lyricsHtml;
+                this.lyricsCache[cacheKey] = lyricsHtml;
+                this.saveLyricsCache();
             } else {
-                body.innerHTML = '<div class="lyrics-empty"><p>پیدا نشد</p><button class="btn btn-primary btn-retry-lyrics" style="margin-top:16px;">تلاش مجدد</button></div>';
+                const emptyHtml = '<div class="lyrics-empty"><p>پیدا نشد</p><button class="btn btn-primary btn-retry-lyrics" style="margin-top:16px;">تلاش مجدد</button></div>';
+                body.innerHTML = emptyHtml;
+                this.lyricsCache[cacheKey] = emptyHtml;
+                this.saveLyricsCache();
                 body.querySelector('.btn-retry-lyrics').addEventListener('click', () => {
+                    delete this.lyricsCache[cacheKey];
+                    this.saveLyricsCache();
                     body.innerHTML = '<div class="lyrics-loading"><div class="spinner spinner-small"></div><p>در حال بارگذاری متن آهنگ...</p></div>';
                     this.fetchAndShowLyrics(track, modal, 0);
                 });
@@ -1412,6 +1487,7 @@ class MusicPlayer {
     }
 
     loadAndPlay(track) {
+        this.closeLyricsModal();
         this.currentTrackData = track;
         this.updateTrackDisplay(track.title, track.artist);
         this.updatePlayerPageFavoriteBtn();
@@ -1600,6 +1676,7 @@ class MusicPlayer {
                         } catch (_) {}
                         if (!track.title) track.title = 'آهنگ';
                     }
+                    this.closeLyricsModal();
                     this.currentTrackData = track;
                     this.updateTrackDisplay(track.title, track.artist);
                     this.updatePlayerPageFavoriteBtn();

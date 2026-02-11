@@ -67,6 +67,7 @@ body {
     transform: translateX(-50%);
     width: 100%;
     max-width: 640px;
+    overflow-x: hidden;
     height: 60px;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
@@ -1228,6 +1229,7 @@ body {
     width: 100%;
     max-width: 640px;
     height: 80px;
+    overflow-x: hidden;
     background: rgba(24, 24, 24, 0.85);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
@@ -1312,12 +1314,14 @@ body {
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    max-width: 1400px;
+    max-width: 100%;
+    min-width: 0;
     margin: 0 auto;
     gap: 12px;
     padding: 0 12px;
     height: 76px;
     flex: 1;
+    overflow: hidden;
 }
 
 /* Left Controls */
