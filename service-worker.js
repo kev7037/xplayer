@@ -1,4 +1,4 @@
-// Service Worker for MyTehran Music Player PWA
+// Service Worker for xPlayer PWA
 // DISABLED: No cache for code files (HTML/CSS/JS) - only cache audio files
 const CACHE_NAME = 'mytehran-music-v4-disabled';
 const AUDIO_CACHE_NAME = 'mytehran-audio-v1';

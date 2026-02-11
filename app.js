@@ -2888,6 +2888,10 @@ class MusicPlayer {
         ctx.fillText(artist, W / 2, ty);
 
         ty += 52;
+        ctx.font = '500 22px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText('برای گوش دادن لینک را بزنید', W / 2, ty);
+        ty += 36;
         ctx.font = '600 20px "Vazirmatn", Tahoma, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.fillText('xPlayer', W / 2, ty);
@@ -2999,6 +3003,9 @@ class MusicPlayer {
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fillText(artist, W / 2, 130);
 
+        ctx.font = '500 22px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText('برای گوش دادن لینک را بزنید', W / 2, H - 110);
         ctx.font = '600 20px "Vazirmatn", Tahoma, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.fillText('xPlayer', W / 2, H - 80);
@@ -3242,11 +3249,19 @@ class MusicPlayer {
         return (div.textContent || div.innerText || '').trim();
     }
 
+    getShareUrlForTrack(track) {
+        if (!track) return '';
+        const trackSourceUrl = track.pageUrl || track.url;
+        const appUrl = new URL('index.html', window.location.href).href;
+        return trackSourceUrl ? `${appUrl}${appUrl.includes('?') ? '&' : '?'}play=${encodeURIComponent(trackSourceUrl)}` : appUrl;
+    }
+
     showStoryShareModal(track, blob) {
         const existing = document.getElementById('storyShareModal');
         if (existing) existing.remove();
 
-        const url = URL.createObjectURL(blob);
+        const imgUrl = URL.createObjectURL(blob);
+        const shareUrl = this.getShareUrlForTrack(track);
         const modal = document.createElement('div');
         modal.id = 'storyShareModal';
         modal.className = 'story-modal-overlay';
@@ -3258,10 +3273,15 @@ class MusicPlayer {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                 </button>
                 <div class="story-modal-preview">
-                    <img src="${url}" alt="Story preview">
+                    <img src="${imgUrl}" alt="Story preview">
                 </div>
                 <p class="story-modal-track">${trackTitle} — ${trackArtist}</p>
+                <p class="story-modal-hint">لینک را کپی کنید و در استوری اینستاگرام اضافه کنید تا با کلیک آهنگ پخش شود</p>
                 <div class="story-modal-actions">
+                    <button class="story-modal-btn story-modal-btn-copy btn-copy-story-link" title="کپی لینک آهنگ">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                        <span>کپی لینک</span>
+                    </button>
                     <button class="story-modal-btn story-modal-btn-share btn-share-story">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
                         <span>اشتراک‌گذاری</span>
@@ -3275,19 +3295,28 @@ class MusicPlayer {
         `;
 
         modal.querySelector('.btn-close-story').addEventListener('click', () => {
-            URL.revokeObjectURL(url);
+            URL.revokeObjectURL(imgUrl);
             modal.remove();
         });
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
-                URL.revokeObjectURL(url);
+                URL.revokeObjectURL(imgUrl);
                 modal.remove();
+            }
+        });
+
+        modal.querySelector('.btn-copy-story-link').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                this.showToast('لینک کپی شد. در اینستاگرام لینک را به استوری اضافه کنید', 'success');
+            } catch (e) {
+                this.showToast('کپی لینک انجام نشد', 'error');
             }
         });
 
         modal.querySelector('.btn-download-story').addEventListener('click', () => {
             const a = document.createElement('a');
-            a.href = url;
+            a.href = imgUrl;
             a.download = `xplayer-${(track.title || 'track').replace(/[^\w\u0600-\u06FF]/g, '-')}.png`;
             a.click();
             this.showToast('تصویر دانلود شد', 'success');
@@ -3295,23 +3324,33 @@ class MusicPlayer {
 
         modal.querySelector('.btn-share-story').addEventListener('click', async () => {
             const file = new File([blob], 'xplayer-story.png', { type: 'image/png' });
+            const shareText = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'}\n${shareUrl}`;
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+            } catch (_) {}
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
-                    await navigator.share({
+                    const shareData = {
                         files: [file],
                         title: `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'}`,
-                        text: 'در حال پخش در xPlayer'
-                    });
-                    this.showToast('اشتراک‌گذاری انجام شد', 'success');
+                        text: shareText,
+                        url: shareUrl
+                    };
+                    if (navigator.canShare(shareData)) {
+                        await navigator.share(shareData);
+                    } else {
+                        await navigator.share({ files: [file], title: shareData.title, text: shareText });
+                    }
+                    this.showToast('لینک کپی شد. در اینستاگرام لینک را به استوری اضافه کنید تا با کلیک آهنگ پخش شود', 'success');
                 } catch (e) {
                     if (e.name !== 'AbortError') this.showToast('اشتراک‌گذاری انجام نشد', 'error');
                 }
             } else {
                 const a = document.createElement('a');
-                a.href = url;
+                a.href = imgUrl;
                 a.download = `xplayer-${(track.title || 'track').replace(/[^\w\u0600-\u06FF]/g, '-')}.png`;
                 a.click();
-                this.showToast('تصویر دانلود شد. می‌توانید آن را در اینستاگرام به اشتراک بگذارید.', 'success');
+                this.showToast('تصویر و لینک کپی شد. در اینستاگرام لینک را به استوری اضافه کنید', 'success');
             }
         });
 
@@ -3324,9 +3363,7 @@ class MusicPlayer {
             this.showToast('آهنگی برای اشتراک‌گذاری نیست', 'info');
             return;
         }
-        const trackSourceUrl = track.pageUrl || track.url;
-        const appUrl = new URL('index.html', window.location.href).href;
-        const shareUrl = trackSourceUrl ? `${appUrl}${appUrl.includes('?') ? '&' : '?'}play=${encodeURIComponent(trackSourceUrl)}` : appUrl;
+        const shareUrl = this.getShareUrlForTrack(track);
         const shareText = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'}`;
         const shareData = {
             title: track.title || 'آهنگ',

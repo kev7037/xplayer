@@ -2332,6 +2332,9 @@ header h1 {
     justify-content: center;
     z-index: 10000;
     padding: 24px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     animation: story-overlay-in 0.2s ease;
 }
 
@@ -2346,9 +2349,14 @@ header h1 {
     border-radius: 20px;
     max-width: 360px;
     width: 100%;
-    overflow: hidden;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
     animation: story-modal-in 0.25s ease;
+    flex-shrink: 0;
+    margin: auto;
 }
 
 @keyframes story-modal-in {
@@ -2403,13 +2411,20 @@ header h1 {
 }
 
 .story-modal-track {
-    padding: 14px 20px 8px;
+    padding: 14px 20px 4px;
     font-size: 0.9rem;
     color: var(--text-secondary);
     text-align: center;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+.story-modal-hint {
+    padding: 0 20px 12px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.85;
+    text-align: center;
+    line-height: 1.4;
 }
 
 .story-modal-actions {
@@ -2446,6 +2461,15 @@ header h1 {
 
 .story-modal-btn-share:hover {
     background: var(--spotify-green-hover);
+}
+
+.story-modal-btn-copy {
+    background: rgba(29, 185, 84, 0.2);
+    color: var(--spotify-green);
+}
+
+.story-modal-btn-copy:hover {
+    background: rgba(29, 185, 84, 0.3);
 }
 
 .story-modal-btn-download {
