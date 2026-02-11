@@ -286,7 +286,11 @@ class MusicPlayer {
                 if (e.key === 'Enter') this.searchMain();
             });
         }
-        
+        const clearSearchHistoryBtn = document.getElementById('clearSearchHistoryBtn');
+        if (clearSearchHistoryBtn) {
+            clearSearchHistoryBtn.addEventListener('click', () => this.clearSearchHistory());
+        }
+
         // Playlists Page
         if (this.createPlaylistBtnMain) {
             this.createPlaylistBtnMain.addEventListener('click', () => this.createNewPlaylist());
@@ -1002,24 +1006,27 @@ class MusicPlayer {
 
         console.log(`Parsed ${results.length} tracks from page ${page}`);
 
+        // Filter: only keep results that match the search query (exclude suggestion items when no real results)
+        const queryNorm = (query || '').trim().toLowerCase();
+        const filtered = queryNorm.length >= 2 ? results.filter(t => {
+            const title = (t.title || '').toLowerCase();
+            const artist = (t.artist || '').toLowerCase();
+            return title.includes(queryNorm) || artist.includes(queryNorm);
+        }) : results;
+
         // Check for pagination after parsing results
         let hasMore = false;
-        if (results.length > 0) {
+        if (filtered.length > 0) {
             hasMore = this.checkForMorePages(doc);
             console.log(`Has more pages: ${hasMore}`);
         }
 
-        if (results.length === 0) {
-            const fallback = this.fallbackSearchResults(query);
-            return {
-                results: fallback,
-                hasMore: false,
-                page: page
-            };
+        if (filtered.length === 0) {
+            return { results: [], hasMore: false, page: page };
         }
-        
+
         return {
-            results: results,
+            results: filtered,
             hasMore: hasMore,
             page: page
         };
@@ -1053,16 +1060,7 @@ class MusicPlayer {
     }
 
     fallbackSearchResults(query) {
-        // Fallback method: Create a structure that allows manual URL input
-        // This is a workaround when direct parsing fails
-        return [{
-            id: Date.now(),
-            title: `نتایج جستجو برای: ${query}`,
-            artist: 'برای استفاده، لطفا لینک مستقیم موزیک را وارد کنید',
-            url: '',
-            image: '',
-            isPlaceholder: true
-        }];
+        return [];
     }
 
     displayResults(results) {
@@ -5212,7 +5210,7 @@ class MusicPlayer {
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" class="empty-state-icon">
                             <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
                         </svg>
-                        <p>چیزی پیدا نشد</p>
+                        <p>چیزی یافت نشد</p>
                     </div>
                 `;
             }
@@ -5316,7 +5314,9 @@ class MusicPlayer {
         console.log('searchHistoryList element:', this.searchHistoryList);
         
         this.searchHistoryList.innerHTML = '';
-        
+        const clearBtn = document.getElementById('clearSearchHistoryBtn');
+        if (clearBtn) clearBtn.style.display = (!Array.isArray(this.searchHistory) || this.searchHistory.length === 0) ? 'none' : 'inline-flex';
+
         if (!Array.isArray(this.searchHistory) || this.searchHistory.length === 0) {
             this.searchHistoryList.innerHTML = '<p class="empty-state">هیچ جستجویی انجام نشده است</p>';
             console.log('No search history to display');
@@ -5325,7 +5325,8 @@ class MusicPlayer {
         
         console.log('Rendering', this.searchHistory.length, 'search history items');
         this.searchHistory.forEach((query, index) => {
-            console.log(`Rendering history item ${index + 1}:`, query);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'history-chip-wrapper';
             const chip = document.createElement('button');
             chip.className = 'history-chip';
             chip.textContent = query;
@@ -5333,8 +5334,29 @@ class MusicPlayer {
                 this.searchInput.value = query;
                 this.searchMain();
             });
-            this.searchHistoryList.appendChild(chip);
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'history-chip-delete';
+            deleteBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+            deleteBtn.title = 'حذف';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.searchHistory = this.searchHistory.filter(q => q !== query);
+                this.saveRecentData();
+                this.displaySearchHistory();
+                this.showToast('جستجو حذف شد', 'success');
+            });
+            wrapper.appendChild(chip);
+            wrapper.appendChild(deleteBtn);
+            this.searchHistoryList.appendChild(wrapper);
         });
+    }
+
+    clearSearchHistory() {
+        this.searchHistory = [];
+        this.saveRecentData();
+        this.displaySearchHistory();
+        this.showToast('همه جستجوهای اخیر حذف شد', 'success');
     }
 
     displayCustomPlaylistsMain() {

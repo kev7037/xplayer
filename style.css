@@ -414,13 +414,43 @@ body {
     margin-bottom: 32px;
 }
 
+.history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
 .history-title {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 12px;
+    margin: 0;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.btn-history-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-history-clear svg {
+    flex-shrink: 0;
+}
+
+.btn-history-clear:hover {
+    color: #ff6b6b;
+    border-color: #ff6b6b;
 }
 
 .history-chips {
@@ -429,26 +459,63 @@ body {
     gap: 8px;
 }
 
-.history-chip {
-    padding: 10px 18px;
+.history-chip-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 500px;
+    overflow: hidden;
+}
+
+.history-chip-wrapper:hover {
+    border-color: var(--spotify-green);
+}
+
+.history-chip {
+    padding: 10px 14px 10px 18px;
+    background: transparent;
+    border: none;
     color: var(--text-primary);
     font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: color 0.2s ease;
     font-family: inherit;
 }
 
-.history-chip:hover {
-    background: var(--bg-hover);
-    border-color: var(--spotify-green);
+.history-chip-wrapper:hover .history-chip {
     color: var(--spotify-green);
 }
 
 .history-chip:active {
     transform: scale(0.98);
+}
+
+.history-chip-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin: 0 4px 0 4px;
+    padding: 0;
+    background: rgba(255, 107, 107, 0.08);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.history-chip-delete:hover {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.25);
+}
+
+.history-chip-delete:active {
+    transform: scale(0.9);
 }
 
 .search-loading {
