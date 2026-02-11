@@ -2995,13 +2995,14 @@ class MusicPlayer {
             y += lineHeight;
         }
 
-        // Title and artist at top
-        ctx.font = '500 32px "Vazirmatn", Tahoma, sans-serif';
+        // Title and artist small, below lyrics box
+        const belowBoxY = boxY + boxHeight + 36;
+        ctx.font = '500 24px "Vazirmatn", Tahoma, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.fillText(title, W / 2, 90);
-        ctx.font = '400 26px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillText(title, W / 2, belowBoxY);
+        ctx.font = '400 20px "Vazirmatn", Tahoma, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText(artist, W / 2, 130);
+        ctx.fillText(artist, W / 2, belowBoxY + 32);
 
         ctx.font = '500 22px "Vazirmatn", Tahoma, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
