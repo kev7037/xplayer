@@ -1,4 +1,4 @@
-/* MyTehran Music Player - Spotify-inspired Design */
+/* xPlayer - Spotify-inspired Design */
 
 * {
     margin: 0;
@@ -1365,6 +1365,14 @@ body {
     color: var(--spotify-green);
 }
 
+.btn-bar-favorite:hover {
+    color: #ff6b6b;
+}
+
+.btn-bar-favorite.favorite-active .heart-icon {
+    fill: #ff6b6b;
+}
+
 .btn-bar-play {
     width: 40px;
     height: 40px;
@@ -2153,6 +2161,37 @@ header h1 {
     background: var(--text-secondary);
 }
 
+.lyrics-selectable {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.lyrics-word {
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 3px;
+    transition: background 0.15s;
+}
+
+.lyrics-word:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.lyrics-word.lyrics-selected {
+    background: rgba(29, 185, 84, 0.35);
+}
+
+.lyrics-story-hint {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.06);
+    border-radius: 8px;
+    text-align: center;
+    user-select: none;
+}
+
 .lyrics-text {
     color: var(--text-primary);
     font-size: 1rem;
@@ -2265,10 +2304,157 @@ header h1 {
     font-size: 1.25rem;
 }
 
+.lyrics-modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-lyrics-story {
+    padding: 6px;
+}
+
 .btn-close-lyrics {
     font-size: 1.5rem;
     line-height: 1;
     padding: 4px 8px;
+}
+
+/* Story Share Modal */
+.story-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 24px;
+    animation: story-overlay-in 0.2s ease;
+}
+
+@keyframes story-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.story-modal {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    max-width: 360px;
+    width: 100%;
+    overflow: hidden;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    animation: story-modal-in 0.25s ease;
+}
+
+@keyframes story-modal-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.story-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.story-modal-close:hover {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.story-modal-close svg {
+    width: 22px;
+    height: 22px;
+}
+
+.story-modal-preview {
+    aspect-ratio: 9/16;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.story-modal-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.story-modal-track {
+    padding: 14px 20px 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.story-modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 20px 24px;
+}
+
+.story-modal-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.2s;
+}
+
+.story-modal-btn:active {
+    transform: scale(0.98);
+}
+
+.story-modal-btn-share {
+    background: var(--spotify-green);
+    color: #000;
+}
+
+.story-modal-btn-share:hover {
+    background: var(--spotify-green-hover);
+}
+
+.story-modal-btn-download {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.story-modal-btn-download:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .lyrics-modal-body {

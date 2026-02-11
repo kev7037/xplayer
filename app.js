@@ -1,4 +1,4 @@
-// MyTehran Music Player - Main Application Logic
+// xPlayer - Main Application Logic
 
 class MusicPlayer {
     constructor() {
@@ -21,7 +21,10 @@ class MusicPlayer {
         
         this.initializeElements();
         this.attachEventListeners();
-        this.loadPlaylist();
+        const hasPlayParam = !!new URLSearchParams(window.location.search).get('play');
+        if (!hasPlayParam) {
+            this.loadPlaylist();
+        }
         this.loadCustomPlaylists();
         this.loadRecentData();
         this.setupInfiniteScroll();
@@ -33,6 +36,7 @@ class MusicPlayer {
             this.setupOfflineIndicator();
             this.setupKeyboardShortcuts();
             this.setupMediaSession();
+            // handlePlayFromUrl must run AFTER setup so player page and elements are ready
             this.handlePlayFromUrl();
         }, 100);
     }
@@ -310,14 +314,23 @@ class MusicPlayer {
         if (shareTrackBtn) {
             shareTrackBtn.addEventListener('click', () => this.shareCurrentTrack());
         }
-        const playerBarShareBtn = document.getElementById('playerBarShareBtn');
-        if (playerBarShareBtn) {
-            playerBarShareBtn.addEventListener('click', (e) => {
+        const shareStoryBtn = document.getElementById('shareStoryBtn');
+        if (shareStoryBtn) {
+            shareStoryBtn.addEventListener('click', () => this.shareAsStory());
+        }
+        const playerBarFavoriteBtn = document.getElementById('playerBarFavoriteBtn');
+        if (playerBarFavoriteBtn) {
+            playerBarFavoriteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.shareCurrentTrack();
+                const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+                if (track) {
+                    this.toggleFavoriteByTrack(track);
+                    this.updateFavoriteButtons();
+                } else {
+                    this.showToast('آهنگی برای علاقه‌مندی نیست', 'info');
+                }
             });
         }
-        
         // Progress Bar Events
         if (this.playerBarProgressContainer) {
             this.setupProgressBar();
@@ -496,7 +509,7 @@ class MusicPlayer {
                 const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
                 if (track) {
                     this.toggleFavoriteByTrack(track);
-                    this.updatePlayerPageFavoriteBtn();
+                    this.updateFavoriteButtons();
                 } else {
                     this.showToast('آهنگی برای علاقه‌مندی نیست', 'info');
                 }
@@ -505,13 +518,47 @@ class MusicPlayer {
     }
 
     updatePlayerPageFavoriteBtn() {
-        if (!this.playerPageFavoriteBtn) return;
-        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
-        if (track && this.isTrackInFavoritesByUrl(track)) {
-            this.playerPageFavoriteBtn.classList.add('favorite-active');
-        } else {
-            this.playerPageFavoriteBtn.classList.remove('favorite-active');
+        this.updateFavoriteButtons();
+    }
+
+    updateFavoriteButtons(trackToggled) {
+        const currentTrack = this.currentTrackData || (this.currentIndex >= 0 && this.playlist && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        const track = trackToggled || currentTrack;
+        const isFavorite = track && this.isTrackInFavoritesByUrl(track);
+        const isCurrentTrack = currentTrack && track && (
+            this.normalizeUrl(currentTrack.url || currentTrack.pageUrl || '') === this.normalizeUrl(track.url || track.pageUrl || '')
+        );
+        if (isCurrentTrack) {
+            if (this.playerPageFavoriteBtn) {
+                this.playerPageFavoriteBtn.classList.toggle('favorite-active', !!isFavorite);
+                this.playerPageFavoriteBtn.title = isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها';
+            }
+            const playerBarFavoriteBtn = document.getElementById('playerBarFavoriteBtn');
+            if (playerBarFavoriteBtn) {
+                playerBarFavoriteBtn.classList.toggle('favorite-active', !!isFavorite);
+                playerBarFavoriteBtn.title = isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها';
+            }
         }
+        this.updateFavoriteButtonsOnTrackCards(track, isFavorite);
+    }
+
+    updateFavoriteButtonsOnTrackCards(track, isFavorite) {
+        if (!track) return;
+        const trackUrl = this.normalizeUrl(track.url || track.pageUrl || '');
+        const trackPageUrl = track.pageUrl ? this.normalizeUrl(track.pageUrl) : '';
+        if (!trackUrl && !trackPageUrl) return;
+        document.querySelectorAll('.track-item[data-track-url]').forEach(el => {
+            const elUrl = el.dataset.trackUrl || '';
+            if (elUrl && (elUrl === trackUrl || elUrl === trackPageUrl)) {
+                const heartBtn = el.querySelector('.btn-favorite');
+                const heartIcon = el.querySelector('.heart-icon');
+                if (heartBtn && heartIcon) {
+                    heartBtn.classList.toggle('favorite-active', !!isFavorite);
+                    heartBtn.title = isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'اضافه به علاقه‌مندی‌ها';
+                    heartIcon.setAttribute('fill', isFavorite ? 'currentColor' : 'none');
+                }
+            }
+        });
     }
 
     getLyricsPageUrl(track) {
@@ -579,7 +626,12 @@ class MusicPlayer {
             <div class="lyrics-modal">
                 <div class="lyrics-modal-header">
                     <h3>متن آهنگ</h3>
-                    <button class="btn btn-icon btn-close-lyrics" title="بستن">&times;</button>
+                    <div class="lyrics-modal-header-actions">
+                        <button class="btn btn-icon btn-lyrics-story" title="استوری متن آهنگ">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                        </button>
+                        <button class="btn btn-icon btn-close-lyrics" title="بستن">&times;</button>
+                    </div>
                 </div>
                 <div class="lyrics-modal-body">
                     <div class="lyrics-loading">
@@ -592,6 +644,11 @@ class MusicPlayer {
         
         document.body.appendChild(modal);
         modal.querySelector('.btn-close-lyrics').addEventListener('click', () => modal.remove());
+        modal.querySelector('.btn-lyrics-story')?.addEventListener('click', () => {
+            const body = modal.querySelector('.lyrics-modal-body');
+            const selected = body ? this.getSelectedLyricsText(body) : '';
+            this.shareLyricsAsStory(selected);
+        });
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         
         const pageUrl = this.getLyricsPageUrl(track);
@@ -602,9 +659,12 @@ class MusicPlayer {
         }
         const cacheKey = this.normalizeUrl(pageUrl);
         const cached = this.lyricsCache[cacheKey];
+        const lyricsStoryHint = '<p class="lyrics-story-hint">یک کلیک: کلمه | دو کلیک: کل خط (پشت سر هم) | سه کلیک: لغو | حداکثر ۶ خط</p>';
         if (cached) {
             const body = modal.querySelector('.lyrics-modal-body');
-            body.innerHTML = cached;
+            const toShow = cached.includes('lyrics-text') ? this.wrapLyricsInSelectableWords(cached) : cached;
+            body.innerHTML = cached.includes('lyrics-text') ? lyricsStoryHint + toShow : cached;
+            if (cached.includes('lyrics-text')) this.setupLyricsClickSelection(body.querySelector('.lyrics-selectable'));
             if (cached.includes('btn-retry-lyrics')) {
                 body.querySelector('.btn-retry-lyrics')?.addEventListener('click', () => {
                     delete this.lyricsCache[cacheKey];
@@ -652,9 +712,12 @@ class MusicPlayer {
             const doc = parser.parseFromString(html, 'text/html');
             let lyricsHtml = this.extractLyricsFromDoc(doc);
             const cacheKey = this.normalizeUrl(pageUrl);
+            const lyricsStoryHint = '<p class="lyrics-story-hint">یک کلیک: کلمه | دو کلیک: کل خط (پشت سر هم) | سه کلیک: لغو | حداکثر ۶ خط</p>';
             if (lyricsHtml) {
-                body.innerHTML = lyricsHtml;
+                const wrapped = this.wrapLyricsInSelectableWords(lyricsHtml);
+                body.innerHTML = lyricsStoryHint + wrapped;
                 this.lyricsCache[cacheKey] = lyricsHtml;
+                this.setupLyricsClickSelection(body.querySelector('.lyrics-selectable'));
                 this.saveLyricsCache();
             } else {
                 const emptyHtml = '<div class="lyrics-empty"><p>پیدا نشد</p><button class="btn btn-primary btn-retry-lyrics" style="margin-top:16px;">تلاش مجدد</button></div>';
@@ -1035,6 +1098,10 @@ class MusicPlayer {
         }
         
         div.dataset.trackId = track.id;
+        const trackUrlKey = (track.url || track.pageUrl || '').trim();
+        if (trackUrlKey) {
+            div.dataset.trackUrl = this.normalizeUrl(trackUrlKey);
+        }
 
         // Check if this track is currently playing
         const isCurrentlyPlaying = source !== 'results' && 
@@ -1144,24 +1211,13 @@ class MusicPlayer {
                     // For home and explore, use track object directly
                     if (source === 'home' || source === 'explore') {
                         this.toggleFavoriteByTrack(track);
+                        this.updateFavoriteButtons(track);
                     } else {
                         if (!trackIdStr) return;
                         const trackId = parseInt(trackIdStr);
                         if (isNaN(trackId)) return;
                         this.toggleFavorite(trackId);
-                    }
-                    // Update the heart icon in the UI
-                    const heartBtn = div.querySelector('.btn-favorite');
-                    const heartIcon = div.querySelector('.heart-icon');
-                    const isFav = this.isTrackInFavoritesByUrl(track);
-                    if (isFav) {
-                        heartBtn.classList.add('favorite-active');
-                        heartBtn.title = 'حذف از علاقه‌مندی‌ها';
-                        heartIcon.setAttribute('fill', 'currentColor');
-                    } else {
-                        heartBtn.classList.remove('favorite-active');
-                        heartBtn.title = 'اضافه به علاقه‌مندی‌ها';
-                        heartIcon.setAttribute('fill', 'none');
+                        this.updateFavoriteButtons(track);
                     }
                 } else if (action === 'add-to-custom') {
                     // Pass track object directly instead of trackId for home/explore
@@ -1491,7 +1547,7 @@ class MusicPlayer {
         this.currentTrackData = track;
         this.updateTrackDisplay(track.title, track.artist);
         this.updatePlayerPageFavoriteBtn();
-        document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | MyTehran`;
+        document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | xPlayer`;
         
         // Update bottom player bar
         if (this.playerBarImage) {
@@ -1680,7 +1736,7 @@ class MusicPlayer {
                     this.currentTrackData = track;
                     this.updateTrackDisplay(track.title, track.artist);
                     this.updatePlayerPageFavoriteBtn();
-                    document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | MyTehran`;
+                    document.title = `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'} | xPlayer`;
                     const imgPlaceholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b3b3b3"%3E%3Cpath d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/%3E%3C/svg%3E';
                     if (this.playerBarImage) this.playerBarImage.src = track.image || imgPlaceholder;
                     const currentImageEl = document.getElementById('currentTrackImage');
@@ -2096,22 +2152,46 @@ class MusicPlayer {
 
     extractMetadataFromDoc(doc, pageUrl = '') {
         let title = null, artist = null, image = null;
-        // اول mcpplay با data-music (مثل Method 1) - برای صفحه تک‌آهنگ
-        let playButton = doc.querySelector('div.mcpplay[data-music]');
-        if (!playButton) playButton = doc.querySelector('div.mcpplay');
-        if (playButton) {
-            title = playButton.getAttribute('data-track') || '';
-            artist = playButton.getAttribute('data-artist') || '';
-            image = playButton.getAttribute('data-image') || '';
+        // اول JSON-LD schema (mytehranmusic گاهی name/byArtist را جابه‌جا دارد: name=خواننده، byArtist.name=آهنگ)
+        const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of ldScripts) {
+            try {
+                const data = JSON.parse(script.textContent || '');
+                const obj = Array.isArray(data) ? data.find(o => o && o['@type'] === 'MusicRecording') : (data && data['@type'] === 'MusicRecording' ? data : null);
+                if (obj) {
+                    const schemaName = (obj.name || '').trim();
+                    const byArtistName = (obj.byArtist && (typeof obj.byArtist === 'string' ? obj.byArtist : obj.byArtist.name) || '').trim();
+                    if (schemaName && byArtistName) {
+                        artist = schemaName;
+                        title = byArtistName;
+                        if (obj.image) image = (typeof obj.image === 'string' ? obj.image : obj.image.url) || '';
+                        break;
+                    }
+                }
+            } catch (_) {}
         }
-        // Fallback: og:title و doc.title - اول کل رو parse کنیم
+        // mcpplay با data-music (فقط اگر از schema نتونستیم بگیریم)
+        if (!title || !artist) {
+            let playButton = doc.querySelector('div.mcpplay[data-music]');
+            if (!playButton) playButton = doc.querySelector('div.mcpplay');
+            if (playButton) {
+                if (!title) title = playButton.getAttribute('data-track') || '';
+                if (!artist) artist = playButton.getAttribute('data-artist') || '';
+                if (!image) image = playButton.getAttribute('data-image') || '';
+            }
+        }
+        // Fallback: og:title و doc.title - فرمت معمول: "خواننده - نام آهنگ" یا "نام آهنگ | خواننده"
         const ogTitleEl = doc.querySelector('meta[property="og:title"]');
         const rawOg = ogTitleEl ? ogTitleEl.getAttribute('content') || '' : '';
         const parts = rawOg.split(/\s*[|\-–—]\s*/).map(s => s.trim()).filter(Boolean);
         const cleanParts = parts.filter(p => !/mytehran|tehranmusic|تهران\s*موزیک/i.test(p));
-        if (!title && cleanParts.length >= 1) title = cleanParts[0];
-        if (!title && doc.title) title = doc.title.replace(/\s*[-|]\s*MyTehran.*$/i, '').trim();
-        if (!artist && cleanParts.length >= 2) artist = cleanParts.find(p => p !== title) || cleanParts[1];
+        if (cleanParts.length >= 2) {
+            if (!artist) artist = cleanParts[0];
+            if (!title) title = cleanParts[1];
+        } else if (cleanParts.length >= 1 && !title) {
+            title = cleanParts[0];
+        }
+        if (!title && doc.title) title = doc.title.replace(/\s*[-|]\s*xPlayer.*$/i, '').trim();
         if (!image) {
             const ogImage = doc.querySelector('meta[property="og:image"]');
             if (ogImage) image = ogImage.getAttribute('content') || '';
@@ -2178,6 +2258,20 @@ class MusicPlayer {
                 artist = (artistTitleMatch[1] + ')').trim();
                 title = artistTitleMatch[2].trim();
             }
+        }
+        // اگر عنوان با نام خواننده شروع شود (مثل data-track: "ایهام بغض مدام")، جدا کنیم
+        if (artist && title) {
+            const artistTrim = artist.trim();
+            const titleTrim = title.trim();
+            if (artistTrim && titleTrim.startsWith(artistTrim)) {
+                const rest = titleTrim.slice(artistTrim.length).replace(/^[\s\-–—]+/, '').trim();
+                if (rest) title = rest;
+            }
+        }
+        // اگر artist شامل " - " باشد (مثل "Ehaam - Boghze Modaam")، فقط بخش اول را نگه دار
+        if (artist && /\s*[\-–—]\s+/.test(artist)) {
+            const firstPart = artist.split(/\s*[\-–—]\s+/)[0].trim();
+            if (firstPart) artist = firstPart;
         }
         return { title: title || null, artist: artist || null, image: image || null };
     }
@@ -2633,16 +2727,39 @@ class MusicPlayer {
         }
     }
 
+    extractMetadataFromAudioUrl(audioUrl) {
+        if (!audioUrl || typeof audioUrl !== 'string') return { title: null, artist: null };
+        try {
+            const pathname = audioUrl.includes('?') ? audioUrl.split('?')[0] : audioUrl;
+            const filename = pathname.split('/').pop() || '';
+            let decoded = decodeURIComponent(filename).replace(/\.(mp3|m4a|ogg|wav)(\s|$)/i, '').trim();
+            decoded = decoded.replace(/\s*\(\d+\)\s*$/, '').trim();
+            const dashParts = decoded.split(/\s*-\s*/).map(s => s.trim()).filter(Boolean);
+            if (dashParts.length >= 2) {
+                return { artist: dashParts[0], title: dashParts[1] };
+            }
+            if (dashParts.length === 1 && dashParts[0]) {
+                return { title: dashParts[0], artist: null };
+            }
+        } catch (_) {}
+        return { title: null, artist: null };
+    }
+
     handlePlayFromUrl() {
         const params = new URLSearchParams(window.location.search);
         const playUrl = params.get('play');
         if (!playUrl) return;
         try {
             const url = decodeURIComponent(playUrl);
+            const isDirectAudio = url && (
+                url.endsWith('.mp3') || url.endsWith('.m4a') || url.endsWith('.ogg') || url.endsWith('.wav') ||
+                (url.includes('dl.mytehranmusic.com') && (url.includes('.mp3') || url.includes('.m4a')))
+            );
+            const meta = isDirectAudio ? this.extractMetadataFromAudioUrl(url) : {};
             const track = {
                 id: Date.now(),
-                title: 'آهنگ',
-                artist: 'در حال بارگذاری...',
+                title: meta.title || 'آهنگ',
+                artist: meta.artist || 'در حال بارگذاری...',
                 url: url,
                 pageUrl: url
             };
@@ -2654,6 +2771,551 @@ class MusicPlayer {
         } catch (e) {
             console.warn('Could not play from URL:', e);
         }
+    }
+
+    async shareLyricsAsStory(selectedText) {
+        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        if (!track) {
+            this.showToast('آهنگی انتخاب نشده', 'info');
+            return;
+        }
+        const body = document.querySelector('#lyricsModal .lyrics-modal-body');
+        if (!body) return;
+        const isEmpty = body.querySelector('.lyrics-empty') || body.querySelector('.lyrics-error') || body.querySelector('.lyrics-loading');
+        if (isEmpty) {
+            this.showToast('متن آهنگ در دسترس نیست', 'info');
+            return;
+        }
+        const lyricsText = selectedText || this.getSelectedLyricsText(body);
+        if (!lyricsText || lyricsText.length < 10) {
+            this.showToast('متن مورد نظر را انتخاب کنید، سپس روی استوری کلیک کنید', 'info');
+            return;
+        }
+        this.showLoading(true, 'در حال ساخت استوری متن...');
+        try {
+            const blob = await this.generateLyricsStoryImage(track, lyricsText);
+            this.showStoryShareModal(track, blob);
+        } catch (e) {
+            console.error('Lyrics story error:', e);
+            this.showToast('خطا در ساخت استوری', 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async shareAsStory() {
+        const track = this.currentTrackData || (this.currentIndex >= 0 && this.playlist[this.currentIndex] ? this.playlist[this.currentIndex] : null);
+        if (!track) {
+            this.showToast('آهنگی برای استوری نیست', 'info');
+            return;
+        }
+        this.showLoading(true, 'در حال ساخت استوری...');
+        try {
+            const blob = await this.generateStoryImage(track);
+            this.showStoryShareModal(track, blob);
+        } catch (e) {
+            console.error('Story generation error:', e);
+            this.showToast('خطا در ساخت استوری', 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async generateStoryImage(track) {
+        const W = 1080;
+        const H = 1920;
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        const title = (track.title || 'آهنگ').trim();
+        const artist = (track.artist || 'ناشناس').trim();
+        let imgUrl = (track.image || '').trim();
+        if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:')) {
+            imgUrl = imgUrl.startsWith('/') ? 'https://mytehranmusic.com' + imgUrl : 'https://mytehranmusic.com/' + imgUrl;
+        }
+
+        // background gradient - darker, Spotify-like
+        const gradient = ctx.createLinearGradient(0, 0, W, H);
+        gradient.addColorStop(0, '#0d0d14');
+        gradient.addColorStop(0.35, '#12121e');
+        gradient.addColorStop(0.7, '#0a0a12');
+        gradient.addColorStop(1, '#050508');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, W, H);
+
+        // عکس دقیقا وسط صفحه، کمی بالاتر؛ متن زیرش
+        const coverSize = Math.min(W, H) * 0.5;
+        const coverX = (W - coverSize) / 2;
+        const coverY = (H - coverSize) / 2 - 80;
+
+        if (imgUrl) {
+            try {
+                const img = await this.loadImage(imgUrl);
+                ctx.save();
+                this.roundRect(ctx, coverX, coverY, coverSize, coverSize, 20);
+                ctx.clip();
+                ctx.drawImage(img, coverX, coverY, coverSize, coverSize);
+                ctx.restore();
+                // subtle shadow under cover
+                ctx.save();
+                ctx.globalAlpha = 0.4;
+                ctx.fillStyle = '#000';
+                this.roundRect(ctx, coverX + 8, coverY + 12, coverSize, coverSize, 20);
+                ctx.fill();
+                ctx.restore();
+            } catch (_) {}
+        }
+
+        const coverBottom = coverY + coverSize;
+        const gapAfterCover = 65;
+        let ty = coverBottom + gapAfterCover;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.direction = 'rtl';
+        ctx.font = 'bold 48px "Vazirmatn", Tahoma, sans-serif';
+        const maxTitleW = W - 80;
+        const titleLines = this.wrapText(ctx, title, maxTitleW);
+        const lineHeight = 54;
+        titleLines.forEach((line, i) => {
+            ctx.fillText(line, W / 2, ty + i * lineHeight);
+        });
+        ty += titleLines.length * lineHeight + 18;
+
+        ctx.font = '500 36px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillText(artist, W / 2, ty);
+
+        ty += 52;
+        ctx.font = '600 20px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fillText('xPlayer', W / 2, ty);
+
+        return new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Canvas toBlob failed'));
+            }, 'image/png', 0.95);
+        });
+    }
+
+    getDominantColorFromImage(img) {
+        const c = document.createElement('canvas');
+        const size = 64;
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, size, size);
+        const data = ctx.getImageData(size / 4, size / 4, size / 2, size / 2).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+            n++;
+        }
+        if (n === 0) return { r: 26, g: 26, b: 30 };
+        return {
+            r: Math.round(r / n),
+            g: Math.round(g / n),
+            b: Math.round(b / n)
+        };
+    }
+
+    async generateLyricsStoryImage(track, lyricsText) {
+        const W = 1080;
+        const H = 1920;
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        const title = (track.title || 'آهنگ').trim();
+        const artist = (track.artist || 'ناشناس').trim();
+        const lines = (lyricsText || '').split(/\n+/).map(s => s.trim()).filter(Boolean).slice(0, 14);
+
+        const gradient = ctx.createLinearGradient(0, 0, W, H);
+        gradient.addColorStop(0, '#0d0d14');
+        gradient.addColorStop(0.35, '#12121e');
+        gradient.addColorStop(0.7, '#0a0a12');
+        gradient.addColorStop(1, '#050508');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.textAlign = 'center';
+        ctx.direction = 'rtl';
+
+        // Load track image and extract dominant color for text box
+        let boxColor = 'rgba(26, 26, 30, 0.9)';
+        let imgUrl = (track.image || '').trim();
+        if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:')) {
+            imgUrl = imgUrl.startsWith('/') ? 'https://mytehranmusic.com' + imgUrl : 'https://mytehranmusic.com/' + imgUrl;
+        }
+        if (imgUrl) {
+            try {
+                const img = await this.loadImage(imgUrl);
+                const { r, g, b } = this.getDominantColorFromImage(img);
+                const dr = Math.round(r * 0.25);
+                const dg = Math.round(g * 0.25);
+                const db = Math.round(b * 0.25);
+                boxColor = `rgba(${dr}, ${dg}, ${db}, 0.88)`;
+            } catch (_) {}
+        }
+
+        // Pre-calculate all display lines and total height for vertical centering
+        ctx.font = '500 38px "Vazirmatn", Tahoma, sans-serif';
+        const maxLineW = W - 160;
+        const lineHeight = 52;
+        const padding = 48;
+        const allDisplayLines = [];
+        for (const line of lines) {
+            const wrapped = this.wrapText(ctx, line, maxLineW);
+            for (const w of wrapped) allDisplayLines.push(w);
+        }
+        const totalTextHeight = allDisplayLines.length * lineHeight;
+        const boxHeight = totalTextHeight + padding * 2;
+        const boxY = (H - boxHeight) / 2;
+        const boxX = 60;
+        const boxW = W - 120;
+
+        // Draw text box with rounded corners (centered, with dominant color)
+        ctx.fillStyle = boxColor;
+        this.roundRect(ctx, boxX, boxY, boxW, boxHeight, 24);
+        ctx.fill();
+
+        // Draw lyrics centered inside box (so middle line is at H/2)
+        ctx.fillStyle = '#ffffff';
+        let y = boxY + padding + lineHeight * 0.75;
+        for (const w of allDisplayLines) {
+            ctx.fillText(w, W / 2, y);
+            y += lineHeight;
+        }
+
+        // Title and artist at top
+        ctx.font = '500 32px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillText(title, W / 2, 90);
+        ctx.font = '400 26px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(artist, W / 2, 130);
+
+        ctx.font = '600 20px "Vazirmatn", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.fillText('xPlayer', W / 2, H - 80);
+
+        return new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Canvas toBlob failed'));
+            }, 'image/png', 0.95);
+        });
+    }
+
+    roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    }
+
+    async loadImage(url) {
+        if (!url || !url.trim()) throw new Error('No image URL');
+        const u = url.trim();
+        const isDataUrl = u.startsWith('data:');
+
+        // data: URLs — مستقیم بدون CORS
+        if (isDataUrl) {
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = u;
+            });
+            return img;
+        }
+
+        // بارگذاری با پروکسی (عکس‌های خارجی معمولاً CORS ندارند)
+        const proxies = [
+            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        ];
+
+        for (const getProxyUrl of proxies) {
+            try {
+                const res = await fetch(getProxyUrl(u));
+                if (!res.ok) continue;
+                const blob = await res.blob();
+                if (blob.type === 'text/html') continue; // پروکسی خطا برگرده
+                const blobUrl = URL.createObjectURL(blob);
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                    img.onload = () => { URL.revokeObjectURL(blobUrl); resolve(); };
+                    img.onerror = () => { URL.revokeObjectURL(blobUrl); reject(); };
+                    img.src = blobUrl;
+                });
+                return img;
+            } catch (_) {
+                continue;
+            }
+        }
+
+        // آخرین تلاش: مستقیم با crossOrigin
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = u;
+        });
+        return img;
+    }
+
+    wrapText(ctx, text, maxWidth) {
+        const chars = [...text];
+        const lines = [];
+        let line = '';
+        for (const c of chars) {
+            const test = line + c;
+            const m = ctx.measureText(test);
+            if (m.width > maxWidth && line) {
+                lines.push(line);
+                line = c;
+            } else {
+                line = test;
+            }
+        }
+        if (line) lines.push(line);
+        return lines.slice(0, 3);
+    }
+
+    wrapLyricsInSelectableWords(html) {
+        const div = document.createElement('div');
+        div.innerHTML = html || '';
+        const text = (div.textContent || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+        const parts = [];
+        for (const line of lines) {
+            const words = line.split(/\s+/).filter(Boolean);
+            if (!words.length) continue;
+            const wordSpans = words.map(w => `<span class="lyrics-word">${this.escapeHtml(w)}</span>`).join(' ');
+            parts.push(`<div class="lyrics-line">${wordSpans}</div>`);
+        }
+        if (!parts.length) return html;
+        return `<div class="lyrics-text lyrics-selectable">${parts.join('')}</div>`;
+    }
+
+    setupLyricsClickSelection(container) {
+        if (!container) return;
+        let lastWord = null;
+        let clickCount = 0;
+        let clickTimer = null;
+        const MAX_LINES = 6;
+
+        const getAllLines = () => [...(container?.querySelectorAll('.lyrics-line') || [])];
+        const getWordsInLine = (line) => [...(line?.querySelectorAll('.lyrics-word') || [])];
+        const isLineFullySelected = (line) => {
+            const words = getWordsInLine(line);
+            return words.length > 0 && words.every(w => w.classList.contains('lyrics-selected'));
+        };
+        const countFullySelectedLines = () => getAllLines().filter(l => isLineFullySelected(l)).length;
+
+        const fillContiguousInLine = (line) => {
+            const words = getWordsInLine(line);
+            const indices = words.map((w, i) => w.classList.contains('lyrics-selected') ? i : -1).filter(i => i >= 0);
+            if (indices.length === 0) return;
+            const min = Math.min(...indices);
+            const max = Math.max(...indices);
+            for (let i = min; i <= max; i++) words[i].classList.add('lyrics-selected');
+        };
+
+        const clearAllSelection = () => {
+            container?.querySelectorAll('.lyrics-word.lyrics-selected').forEach(w => w.classList.remove('lyrics-selected'));
+        };
+
+        const deselectContiguousBlock = (line, word) => {
+            const words = getWordsInLine(line);
+            const idx = words.indexOf(word);
+            if (idx < 0) return;
+            const selectedIndices = words.map((w, i) => w.classList.contains('lyrics-selected') ? i : -1).filter(i => i >= 0);
+            if (selectedIndices.length === 0) return;
+            const min = Math.min(...selectedIndices);
+            const max = Math.max(...selectedIndices);
+            if (idx >= min && idx <= max) {
+                for (let i = min; i <= max; i++) words[i].classList.remove('lyrics-selected');
+            }
+        };
+
+        const getLinesWithSelection = () => getAllLines().filter(l => getWordsInLine(l).some(w => w.classList.contains('lyrics-selected')));
+        const hasSelectionInOtherLine = (currentLine) => getLinesWithSelection().some(l => l !== currentLine);
+
+        const getFullySelectedLineIndices = () => {
+            const all = getAllLines();
+            return all.map((l, i) => isLineFullySelected(l) ? i : -1).filter(i => i >= 0);
+        };
+        const isLineAdjacentToSelection = (lineIndex) => {
+            const sel = getFullySelectedLineIndices();
+            if (sel.length === 0) return true;
+            const min = Math.min(...sel);
+            const max = Math.max(...sel);
+            return lineIndex === min - 1 || lineIndex === max + 1;
+        };
+
+        container.addEventListener('click', (e) => {
+            const word = e.target.closest('.lyrics-word');
+            if (!word) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const sameWord = lastWord === word;
+            const line = word.closest('.lyrics-line');
+
+            if (clickTimer) clearTimeout(clickTimer);
+
+            if (sameWord) {
+                clickCount++;
+            } else {
+                clickCount = 1;
+            }
+            lastWord = word;
+
+            clickTimer = setTimeout(() => {
+                const wordsInLine = getWordsInLine(line);
+                if (clickCount === 1) {
+                    if (isLineFullySelected(line)) {
+                    } else if (word.classList.contains('lyrics-selected')) {
+                        deselectContiguousBlock(line, word);
+                    } else {
+                        if (hasSelectionInOtherLine(line)) clearAllSelection();
+                        word.classList.add('lyrics-selected');
+                        fillContiguousInLine(line);
+                    }
+                } else if (clickCount === 2) {
+                    const others = getLinesWithSelection().filter(l => l !== line);
+                    const hasPartial = others.some(l => !isLineFullySelected(l));
+                    if (hasPartial) clearAllSelection();
+                    const allLines = getAllLines();
+                    const lineIndex = allLines.indexOf(line);
+                    if (!isLineFullySelected(line) && countFullySelectedLines() >= MAX_LINES) {
+                        this.showToast(`حداکثر ${MAX_LINES} خط می‌توانید انتخاب کنید`, 'info');
+                    } else if (!isLineAdjacentToSelection(lineIndex)) {
+                        this.showToast('خطوط انتخابی باید پشت سر هم باشند', 'info');
+                    } else {
+                        wordsInLine.forEach(w => w.classList.add('lyrics-selected'));
+                    }
+                } else if (clickCount >= 3) {
+                    wordsInLine.forEach(w => w.classList.remove('lyrics-selected'));
+                }
+                clickCount = 0;
+                lastWord = null;
+                clickTimer = null;
+            }, 320);
+        });
+    }
+
+    getSelectedLyricsText(container) {
+        if (!container) return '';
+        const lines = [...container.querySelectorAll('.lyrics-line')];
+        const parts = [];
+        let inBlock = false;
+        for (const line of lines) {
+            const words = line.querySelectorAll('.lyrics-word.lyrics-selected');
+            if (words.length) {
+                parts.push([...words].map(w => w.textContent).join(' '));
+                inBlock = true;
+            } else if (inBlock) {
+                break;
+            }
+        }
+        return parts.join('\n').trim();
+    }
+
+    htmlToPlainText(html) {
+        const div = document.createElement('div');
+        div.innerHTML = html || '';
+        return (div.textContent || div.innerText || '').trim();
+    }
+
+    showStoryShareModal(track, blob) {
+        const existing = document.getElementById('storyShareModal');
+        if (existing) existing.remove();
+
+        const url = URL.createObjectURL(blob);
+        const modal = document.createElement('div');
+        modal.id = 'storyShareModal';
+        modal.className = 'story-modal-overlay';
+        const trackTitle = this.escapeHtml((track.title || 'آهنگ').trim());
+        const trackArtist = this.escapeHtml((track.artist || 'ناشناس').trim());
+        modal.innerHTML = `
+            <div class="story-modal">
+                <button class="story-modal-close btn-close-story" title="بستن" aria-label="بستن">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+                <div class="story-modal-preview">
+                    <img src="${url}" alt="Story preview">
+                </div>
+                <p class="story-modal-track">${trackTitle} — ${trackArtist}</p>
+                <div class="story-modal-actions">
+                    <button class="story-modal-btn story-modal-btn-share btn-share-story">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+                        <span>اشتراک‌گذاری</span>
+                    </button>
+                    <button class="story-modal-btn story-modal-btn-download btn-download-story">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                        <span>دانلود</span>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        modal.querySelector('.btn-close-story').addEventListener('click', () => {
+            URL.revokeObjectURL(url);
+            modal.remove();
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                URL.revokeObjectURL(url);
+                modal.remove();
+            }
+        });
+
+        modal.querySelector('.btn-download-story').addEventListener('click', () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `xplayer-${(track.title || 'track').replace(/[^\w\u0600-\u06FF]/g, '-')}.png`;
+            a.click();
+            this.showToast('تصویر دانلود شد', 'success');
+        });
+
+        modal.querySelector('.btn-share-story').addEventListener('click', async () => {
+            const file = new File([blob], 'xplayer-story.png', { type: 'image/png' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: `${track.title || 'آهنگ'} - ${track.artist || 'ناشناس'}`,
+                        text: 'در حال پخش در xPlayer'
+                    });
+                    this.showToast('اشتراک‌گذاری انجام شد', 'success');
+                } catch (e) {
+                    if (e.name !== 'AbortError') this.showToast('اشتراک‌گذاری انجام نشد', 'error');
+                }
+            } else {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `xplayer-${(track.title || 'track').replace(/[^\w\u0600-\u06FF]/g, '-')}.png`;
+                a.click();
+                this.showToast('تصویر دانلود شد. می‌توانید آن را در اینستاگرام به اشتراک بگذارید.', 'success');
+            }
+        });
+
+        document.body.appendChild(modal);
     }
 
     async shareCurrentTrack() {
@@ -3443,9 +4105,11 @@ class MusicPlayer {
         }
     }
 
-    showLoading(show) {
+    showLoading(show, message) {
         if (this.loadingIndicator) {
             this.loadingIndicator.style.display = show ? 'flex' : 'none';
+            const p = this.loadingIndicator?.querySelector('.loading-overlay-content p');
+            if (p && show) p.textContent = message || 'در حال بارگذاری آهنگ...';
         }
     }
 
