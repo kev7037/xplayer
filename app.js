@@ -152,12 +152,6 @@ class MusicPlayer {
     }
 
     attachEventListeners() {
-        // Search
-        this.searchBtn.addEventListener('click', () => this.search());
-        this.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.search();
-        });
-
         // Audio events
         this.audioPlayer.addEventListener('ended', () => {
             if (this.repeatMode === 1) {
