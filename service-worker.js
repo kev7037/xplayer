@@ -1,18 +1,40 @@
 // Service Worker for xPlayer PWA
-// DISABLED: No cache for code files (HTML/CSS/JS) - only cache audio files
-const CACHE_NAME = 'mytehran-music-v4-disabled';
+const APP_SHELL_CACHE_NAME = 'xplayer-app-shell-v1';
 const AUDIO_CACHE_NAME = 'mytehran-audio-v1';
 const MAX_AUDIO_CACHE_SIZE = 50 * 1024 * 1024; // 50MB limit for audio cache
 
-// Don't cache code files - always fetch from network
-const urlsToCache = [];
+// App shell files - pre-cached for offline use (when internet is completely off)
+function getAppShellUrls() {
+  const base = self.location.origin + (self.location.pathname.replace(/[^/]*$/, '') || '/');
+  return [
+    base,
+    base + 'index.html',
+    base + 'app.js',
+    base + 'style.css',
+    base + 'manifest.json',
+    base + 'icon.svg'
+  ];
+}
 
-// Install event - skip caching code files
+// Install event - pre-cache app shell for offline use
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Install - Code caching disabled');
-  // Delete old caches
+  console.log('Service Worker: Install - Pre-caching app shell for offline');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.open(APP_SHELL_CACHE_NAME).then((cache) => {
+      const urls = getAppShellUrls();
+      return Promise.allSettled(
+        urls.map((url) =>
+          fetch(url, { cache: 'reload' })
+            .then((res) => {
+              if (res.ok) cache.put(url, res);
+            })
+            .catch(() => {})
+        )
+      );
+    }).then(() => {
+      // Delete old caches
+      return caches.keys();
+    }).then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName.startsWith('mytehran-music-')) {
@@ -47,16 +69,36 @@ self.addEventListener('fetch', (event) => {
                      url.pathname === '/' ||
                      (url.pathname.endsWith('/') && url.hostname === self.location.hostname);
   
-  // Don't intercept code files - let them load directly from network
+  // App shell: network-first, fallback to pre-cached version for offline
   if (isCodeFile && url.origin === self.location.origin) {
     event.respondWith(
       fetch(event.request).then((response) => {
         if (response.status === 200) {
           const clone = response.clone();
-          caches.open('mytehran-app-v1').then((cache) => cache.put(event.request, clone));
+          caches.open(APP_SHELL_CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => caches.match(event.request))
+      }).catch(() => {
+        // Offline: serve from pre-cached app shell
+        return caches.open(APP_SHELL_CACHE_NAME).then((cache) => {
+          return cache.match(event.request).then((cached) => {
+            if (cached) return cached;
+            // Fallback: for "/" or root, try index.html
+            if (url.pathname === '/' || url.pathname === '') {
+              const indexUrl = new URL('index.html', url.origin + '/');
+              return cache.match(indexUrl);
+            }
+            return null;
+          });
+        }).then((cached) => {
+          if (cached) return cached;
+          // No cache - show minimal offline message (shouldn't happen if install succeeded)
+          return new Response(
+            '<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>xPlayer</title></head><body style="font-family:sans-serif;padding:20px;text-align:center"><h1>آفلاین</h1><p>لطفاً اتصال اینترنت را روشن کنید و یک‌بار برنامه را با اینترنت باز کنید تا برای استفاده آفلاین آماده شود.</p></body></html>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          );
+        });
+      })
     );
     return;
   }
